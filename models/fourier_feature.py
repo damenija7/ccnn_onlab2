@@ -12,12 +12,15 @@ class FourierFeature(torch.nn.Module):
         self.B = torch.randn(in_channels//4, in_channels//2)
         self.B_T = self.B.T
 
-        self.tail = torch.nn.Sequential(torch.nn.Linear(in_features=in_channels//2, out_features=1, bias=True))
-                                        # torch.nn.ReLU(),
-                                        #torch.nn.Linear(in_features=256, out_features=128, bias=True),
-                                        # torch.nn.ReLU(),
-                                        # torch.nn.Linear(in_features=128, out_features=1, bias=True))
+        self.tail = torch.nn.Sequential(torch.nn.Linear(in_features=in_channels//2, out_features=in_channels//4, bias=True),
+                                        torch.nn.ReLU(),
+                                        torch.nn.Linear(in_features=in_channels//4, out_features=in_channels//8, bias=True),
+                                        torch.nn.ReLU(),
+                                        torch.nn.Linear(in_features=in_channels//8, out_features=1, bias=True))
 
+    def to(self, device):
+        super().to(device)
+        self.B_T = self.B_T.to(device)
 
     def forward(self, x):
 

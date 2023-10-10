@@ -14,7 +14,7 @@ from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttenti
 
 
 
-class ProtTransSequenceEmbedder:
+class ProtTransEmbedder:
     def __init__(self, transformer_link: str = "Rostlab/prot_t5_xl_half_uniref50-enc"):
         # super().__init__()
         # Change Model Class Depending on what is specified by transformer link ( Bert/ T5 / .. )

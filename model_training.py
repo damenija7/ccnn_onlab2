@@ -10,7 +10,7 @@ from typing import Optional, Type, Callable, Union
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, random_split, Subset, WeightedRandomSampler
+from torch.utils.data import DataLoader, random_split, Subset, WeightedRandomSampler, RandomSampler
 
 from dataset_embedding_cacher.embedding_cacher import EmbeddingCacher
 from model_training import config
@@ -168,7 +168,7 @@ def train_normal(batch_size,
 
     print("Setting up Dataloader...")
 
-    train_sampler, val_sampler = None, None
+    train_sampler, val_sampler = RandomSampler(train_dataset), RandomSampler(val_dataset)
     if weighted_random_sampler:
         train_sampler = get_weighted_train_sampler(train_dataset, train_sampler)
         #
@@ -216,7 +216,7 @@ def get_weighted_train_sampler(train_dataset, train_sampler):
             # (length'th root is 1/length in logit space)
             logit /= torch.numel(label)
             # weight = np.exp(weight)
-            train_weights.append(np.exp(logit))
+            train_weights.append(max(1e-8, np.exp(logit)))
         train_weights_sum = sum(train_weights)
         train_weights = [weight / train_weights_sum for weight in train_weights]
 
@@ -270,7 +270,7 @@ def train_kfold(batch_size: int,
         type(train_dataset)._set_attributes(fold_train_dataset)
         type(train_dataset)._set_attributes(fold_val_dataset)
 
-        fold_train_sampler, fold_val_sampler = None, None
+        fold_train_sampler, fold_val_sampler = RandomSampler(fold_train_dataset), RandomSampler(fold_val_dataset)
 
         if weighted_random_sampler:
                 fold_train_sampler = get_weighted_train_sampler(fold_train_dataset, fold_train_sampler)
@@ -279,13 +279,11 @@ def train_kfold(batch_size: int,
         train_dataloader = torch.utils.data.DataLoader(fold_train_dataset, batch_size=batch_size,
                                                    sampler=fold_train_sampler,
                                                        collate_fn=raw_collator,
-                                                       drop_last=True,
-                                                       shuffle=True)
+                                                       drop_last=True)
         val_dataloader = torch.utils.data.DataLoader(fold_val_dataset, batch_size=batch_size,
                                                    sampler=fold_val_sampler,
                                                      collate_fn=raw_collator,
-                                                     drop_last=True,
-                                                     shuffle=True)
+                                                     drop_last=True)
 
         trainer = Trainer(
             train_loader=train_dataloader,
