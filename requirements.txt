@@ -1,0 +1,44 @@
+# bio_embeddings[all]
+
+
+# fair-esm[esmfold]
+# dllogger @ git+https://github.com/NVIDIA/dllogger.git
+# openfold @ git+https://github.com/aqlaboratory/openfold.git@4b41059694619831a7db195b7e0988fc4ff3a307
+
+transformers
+sentencepiece
+accelerate
+jupyter
+ipywidgets
+
+matplotlib
+tqdm
+scikit-learn
+
+# for performance metric visualization
+snakeviz
+
+# storage
+h5py
+
+# --extra-index-url https://download.pytorch.org/whl/rocm5.4.2
+torch
+torchvision
+torchaudio
+
+# pandas
+pandas
+
+fasta
+
+# pandas ext for reading in html
+lxml
+beautifulsoup4
+gemmi
+
+# visualize torch models
+torchviz
+
+# onnnx
+onnx
+

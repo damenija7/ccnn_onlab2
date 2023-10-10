@@ -1,0 +1,8 @@
+depo
+output
+cache
+*.h5
+*.csv
+*.cache
+*.xml
+venv
