@@ -17,8 +17,14 @@ def get_rec_data(rec):
             seq_len += 1
         else:
             break
-    seq = rec.seq[:seq_len]
-    label = ''.join(['0' if char == 'i' else '1' for char in rec.seq[seq_len:2 * seq_len]])
+    seq = str(rec.seq[:seq_len])
+
+    if len(seq) == len(rec.seq):
+        label = ''.join(['0' for _ in range(seq_len)])
+    else:
+        label = ''.join(['0' if char == 'i' else '1' for char in rec.seq[seq_len:2 * seq_len]])
+
+    assert len(seq) == len(label)
 
     return uniprot_id, seq, label
 

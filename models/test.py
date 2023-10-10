@@ -10,7 +10,7 @@ class Test0(torch.nn.Module):
 
 
 class Test3(torch.nn.Module):
-    def __init__(self, in_channel=1024):
+    def __init__(self, in_channel=1024, out_channel=1):
         super().__init__()
 
         self.head1 = torch.nn.Sequential(torch.nn.Linear(in_features=in_channel, out_features=in_channel//2, bias=True),
@@ -113,7 +113,7 @@ class Test3(torch.nn.Module):
 
         self.conv = torch.nn.Conv1d(in_channels=256, out_channels=128, kernel_size=3, padding=1)
         self.tail = torch.nn.Sequential(
-                                        torch.nn.Linear(in_features=128, out_features=1, bias=True),
+                                        torch.nn.Linear(in_features=128, out_features=3, bias=True),
         torch.nn.Sigmoid())
 
     def forward(self, x):
@@ -126,7 +126,7 @@ class Test3(torch.nn.Module):
         return torch.squeeze(x, dim=-1)
 
 
-class TestConv2(torch.nn.Module):
+class TestConv3(torch.nn.Module):
     def __init__(self, in_channels = 1024):
         super().__init__()
 
@@ -135,21 +135,18 @@ class TestConv2(torch.nn.Module):
         self.conv = torch.nn.Sequential(torch.nn.Conv1d(in_channels=in_channels, out_channels=in_channels//2, kernel_size=kern_size, padding=kern_size//2),
                                         torch.nn.ReLU(),
                                         torch.nn.BatchNorm1d(num_features=in_channels//2),
-
                                     torch.nn.Conv1d(in_channels=in_channels//2, out_channels=in_channels//4, kernel_size=kern_size, padding=kern_size//2),
                                     torch.nn.ReLU(),
                                     torch.nn.BatchNorm1d(num_features=in_channels//4),
-
-
-                                    torch.nn.Conv1d(in_channels=in_channels//4, out_channels=1, kernel_size=kern_size, padding=kern_size//2)),
+                                    torch.nn.Conv1d(in_channels=in_channels//4, out_channels=2, kernel_size=kern_size, padding=kern_size//2))
 
 
 
-        self.tail = torch.nn.Sigmoid()
+        self.tail = torch.nn.Softmax(dim=-1)
 
     def forward(self, x):
         x = torch.permute(x, (0,2,1))
         x = self.conv(x)
         x = torch.permute(x, (0, 2,1))
         x = self.tail(x)
-        return torch.squeeze(x, dim=-1)
+        return x

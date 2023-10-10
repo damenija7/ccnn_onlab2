@@ -183,7 +183,7 @@ class Trainer:
         return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in train_epoch_stats}
 
     def set_current_batch_padding_mask(self, labels, seq_lens):
-        self.current_batch_padding_mask = torch.empty_like(labels, dtype=torch.bool)
+        self.current_batch_padding_mask = torch.empty(labels.shape[:2], dtype=torch.bool, device=labels.device)
         for i, seq_len in enumerate(seq_lens):
             self.current_batch_padding_mask[i, :seq_len] = True
 
@@ -259,12 +259,16 @@ class Trainer:
         #                                                     alpha=1.0 - (self.val_loader.dataset.pos_rate if validation else self.train_loader.dataset.pos_rate),
         #                                              reduction="mean")
 
+        if len(labels.shape) < 2:
+            labels = torch.unsqueeze(labels, dim=-1)
+
         # Compensate for unbalanced dataset property by class weighting
         if not self.weighted_random_sampler:
             if validation:
                 # Using class weighting in the loss fn during validation leads to skewed (positive-favored) values
                 # That can lead to incorrect interpretations at the user's end
-                return nn.BCELoss()(preds, labels)
+                #return (nn.BCELoss()(preds, labels))
+                return (nn.BCELoss()(preds, labels))
             else:
                 pos_rate = self.train_loader.dataset.pos_rate
                 weights = torch.full_like(preds, pos_rate)
@@ -277,7 +281,18 @@ class Trainer:
     def get_batch_stats(self, preds, labels) -> Dict[str, float]:
         with torch.no_grad():
             preds_round = preds.round()
+
+            # TODO multiple channel
+            if len(labels.shape) >= 3:
+                labels = torch.any(labels, dim=-1)
+                preds_round = torch.any(preds_round, dim=-1)
+            else:
+                labels = torch.unsqueeze(labels, dim=-1)
+
             correct_preds = preds_round == labels
+
+
+
             correct_preds_positive = correct_preds[labels > 0]
             correct_preds_negative = correct_preds[labels < 1]
             TP = correct_preds_positive.sum().item()

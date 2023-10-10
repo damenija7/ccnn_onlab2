@@ -104,17 +104,50 @@ def run_training(
     dataset_class = get_dataset_class(dataset_path)
 
 
+    # TMP
+    # TEST BEG, IN, END LABELS INSTEAD
+    def label_transform_beginend(label) -> torch.Tensor:
+        res = [float(digit) for digit in label]
+
+        res_tensor = torch.zeros(size=(len(label), 3), dtype=torch.double)
+
+        in_ = False
+        for i in range(len(res) - 1):
+            if res[i] == 1.0:
+                if not in_:
+                    # BEG
+                    res_tensor[i, 0] = 1.0
+                    in_ = True
+                else:
+                    # INSIDE
+                    if res[i+1] == 1.0:
+                        res_tensor[i, 2] = 1.0
+                    # END
+                    else:
+                        res_tensor[i, 1] = 1.0
+                        in_ = False
+        if in_:
+            res_tensor[len(res) - 1, 2] = 1.0
+
+        return res_tensor[:, :2]
+
+
+
+
+
     train_dataset = dataset_class(
         csv_file_path=dataset_path,
         id_sequence_label_idx=0,
         max_seq_len=max_seq_len,
+        # label_transform=label_transform_beginend
     )
 
     if dataset_validation_path:
         val_dataset = get_dataset_class(dataset_validation_path)(
             csv_file_path=dataset_validation_path,
             id_sequence_label_idx=0,
-            max_seq_len=max_seq_len
+            max_seq_len=max_seq_len,
+            # label_transform=label_transform_beginend
         )
     else:
         val_dataset = None
@@ -210,13 +243,17 @@ def train_normal(batch_size,
 def get_weighted_train_sampler(train_dataset, train_sampler):
     if isinstance(train_dataset.labels[0], torch.Tensor) or isinstance(train_dataset.labels[0], np.ndarray):
         train_weights = []
-        for label in train_dataset.labels:
-            logit = torch.numel(label[label < 1]) * np.log(train_dataset.pos_rate)
-            logit += torch.numel(label[label > 0]) * np.log(1.0 - train_dataset.pos_rate)
+        for label_idx, label in enumerate(train_dataset.labels):
+            #logit = torch.numel(label[label < 1]) * np.log(train_dataset.pos_rate)
+            logit = train_dataset.pos[label_idx] * np.log(train_dataset.pos_rate)
+            #logit += torch.numel(label[label > 0]) * np.log(1.0 - train_dataset.pos_rate)
+            logit += (label.shape[0] - train_dataset.pos[label_idx]) * np.log(1.0 - train_dataset.pos_rate)
+
+
             # (length'th root is 1/length in logit space)
-            logit /= torch.numel(label)
+            logit /= label.shape[0]
             # weight = np.exp(weight)
-            train_weights.append(max(1e-8, np.exp(logit)))
+            train_weights.append(np.exp(logit))
         train_weights_sum = sum(train_weights)
         train_weights = [weight / train_weights_sum for weight in train_weights]
 

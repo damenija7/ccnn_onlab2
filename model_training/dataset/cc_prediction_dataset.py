@@ -1,4 +1,5 @@
 import csv
+import sys
 import textwrap
 from typing import Callable
 
@@ -19,9 +20,10 @@ class CCPredictionDataset(Dataset):
         delimiter: str = ",",
         skip_header: bool = True,
         id_sequence_label_idx: int = 0,
-        max_seq_len: int = 512,
+        max_seq_len: int = sys.maxsize,
     ):
         self.ids, self.sequences, self.labels = [], [], []
+        self.pos = []
 
         with open(csv_file_path, newline="") as csv_file:
             csv_reader = csv.reader(csv_file, delimiter=delimiter)
@@ -58,10 +60,30 @@ class CCPredictionDataset(Dataset):
     def _set_attributes(dataset: Dataset):
         P, N = 0, 0
 
-        for seq, label in dataset:
-            P_label = torch.count_nonzero(label == 1).item()
-            P += P_label
-            N += len(label) - P_label
+        pos = []
 
+        for seq, label in dataset:
+            # #if len(label.shape) < 2:
+            # #    label = torch.unsqueeze(label, dim=-1)
+            #
+            # seq_P = 0
+            # # TDOO TMP
+            # for res_idx in range(label.shape[0]):
+            #     if torch.all(label[res_idx] == 0.0):
+            #         N += 1
+            #     else:
+            #         seq_P += 1
+            #         P += 1
+            # pos.append(seq_P)
+
+            seq_P = torch.sum(label).item()
+            seq_N = torch.numel(label) - seq_P
+            pos.append(seq_P)
+
+            P += seq_P
+            N += seq_N
+
+
+        dataset.pos = pos
         dataset.pos_rate = P / (P + N)
         dataset.labels = [label for _, label in dataset]
