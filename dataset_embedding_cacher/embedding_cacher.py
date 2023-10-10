@@ -14,6 +14,9 @@ class EmbeddingCacher:
         self.embedder = sequence_embedder
         self.cache_path = cache_path
 
+
+        self.stored_secs = None
+
         if not os.path.exists(cache_path):
             f = h5py.File(cache_path, "x")
             f.close()
@@ -63,7 +66,11 @@ class EmbeddingCacher:
         embeddings: List[Tensor] = []
 
         with h5py.File(self.cache_path, "r") as cache_file:
-            stored_secs = set(cache_file.keys())
+            if self.stored_secs:
+                stored_secs = self.stored_secs
+            else:
+                self.stored_secs = stored_secs = set(cache_file.keys())
+
             for seq in sequences:
                 if seq not in stored_secs:
                     #raise Exception(
@@ -71,6 +78,7 @@ class EmbeddingCacher:
                     #)
                     cache_file.close()
                     self.cache_embeddings(sequences)
+                    self.stored_secs.add(sequences)
                     cache_file = h5py.File(self.cache_path, "r")
 
 
