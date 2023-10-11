@@ -21,6 +21,7 @@ class CCPredictionDataset(Dataset):
         skip_header: bool = True,
         id_sequence_label_idx: int = 0,
         max_seq_len: int = sys.maxsize,
+            **kwargs
     ):
         self.ids, self.sequences, self.labels = [], [], []
         self.pos = []

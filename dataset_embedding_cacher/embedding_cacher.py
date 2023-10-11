@@ -78,7 +78,7 @@ class EmbeddingCacher:
                     #)
                     cache_file.close()
                     self.cache_embeddings(sequences)
-                    self.stored_secs.add(sequences)
+                    self.stored_secs.update(sequences)
                     cache_file = h5py.File(self.cache_path, "r")
 
 

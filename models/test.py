@@ -37,11 +37,11 @@ class Test3(torch.nn.Module):
 
         x = x + torch.permute(self.batch2(torch.permute(self.head2(x), (0,2,1))), (0,2,1))
 
-        # x = torch.permute(self.batch3(torch.permute(self.head3(x), (0,2,1))), (0,2,1))
+        x = torch.permute(self.batch3(torch.permute(self.head3(x), (0,2,1))), (0,2,1))
 
         x = self.tail(x)
 
-        return torch.nn.functional.sigmoid(x.squeeze(dim=-1))
+        return torch.nn.functional.sigmoid(x)
 
 
 class Test2(torch.nn.Module):
@@ -102,32 +102,10 @@ class TestConv(torch.nn.Module):
         return torch.squeeze(x, dim=-1)
 
 
-class Test3(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.head = torch.nn.Sequential(torch.nn.Linear(in_features=1024, out_features=512, bias=True),
-                                        torch.nn.ReLU(),
-                                        torch.nn.Linear(in_features=512, out_features=256, bias=True),
-                                        torch.nn.ReLU())
-
-        self.conv = torch.nn.Conv1d(in_channels=256, out_channels=128, kernel_size=3, padding=1)
-        self.tail = torch.nn.Sequential(
-                                        torch.nn.Linear(in_features=128, out_features=3, bias=True),
-        torch.nn.Sigmoid())
-
-    def forward(self, x):
-        x = self.head(x)
-        x = torch.permute(x, (0,2,1))
-        x = self.conv(x)
-        x = torch.permute(x, (0, 2,1))
-        x = self.tail(x)
-
-        return torch.squeeze(x, dim=-1)
 
 
 class TestConv3(torch.nn.Module):
-    def __init__(self, in_channels = 1024):
+    def __init__(self, in_channels = 1024, *args):
         super().__init__()
 
         kern_size = 7
@@ -138,7 +116,7 @@ class TestConv3(torch.nn.Module):
                                     torch.nn.Conv1d(in_channels=in_channels//2, out_channels=in_channels//4, kernel_size=kern_size, padding=kern_size//2),
                                     torch.nn.ReLU(),
                                     torch.nn.BatchNorm1d(num_features=in_channels//4),
-                                    torch.nn.Conv1d(in_channels=in_channels//4, out_channels=2, kernel_size=kern_size, padding=kern_size//2))
+                                    torch.nn.Conv1d(in_channels=in_channels//4, out_channels=1, kernel_size=kern_size, padding=kern_size//2))
 
 
 

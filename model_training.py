@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, random_split, Subset, WeightedRandomSam
 from dataset_embedding_cacher.embedding_cacher import EmbeddingCacher
 from model_training import config
 from model_training.dataset.cc_prediction_dataset import CCPredictionDataset
+from model_training.dataset.cc_prediction_dataset_force_residue import CCPredictionDatasetForceResidue
 from model_training.dataset.cc_prediction_dataset_per_residue import CCPredictionDatasetPerResidue
 from model_training.dataset.collator import raw_collator
 from model_training.sampler.gumbel_max import GumbelMaxWeightedRandomSampler
@@ -40,7 +41,8 @@ def run_training(
         model_class_path,
         max_seq_len: int,
         k_fold_cross_validation: Optional[int],
-        weighted_random_sampler: bool
+        weighted_random_sampler: bool,
+        force_per_residue: bool
 ):
     generator = torch.Generator().manual_seed(42)
 
@@ -101,7 +103,7 @@ def run_training(
     print("Loading Datasets...")
     # CCPredictionDatasetPerResidue: ("uniprot_id", "residue_idx", "embedding", "label") header
     # CCPredictionDataset: ("uniprot_id","sequence","label") header
-    dataset_class = get_dataset_class(dataset_path)
+    dataset_class = get_dataset_class(dataset_path, force_per_residue)
 
 
     # TMP
@@ -139,15 +141,18 @@ def run_training(
         csv_file_path=dataset_path,
         id_sequence_label_idx=0,
         max_seq_len=max_seq_len,
-        # label_transform=label_transform_beginend
+        # label_transform=label_transform_begin
+        seq_embedder=embedder
+
     )
 
     if dataset_validation_path:
-        val_dataset = get_dataset_class(dataset_validation_path)(
+        val_dataset = get_dataset_class(dataset_validation_path, force_per_residue=False)(
             csv_file_path=dataset_validation_path,
             id_sequence_label_idx=0,
             max_seq_len=max_seq_len,
-            # label_transform=label_transform_beginend
+            # label_transform=label_transform_beginend,
+            seq_embedder=embedder
         )
     else:
         val_dataset = None
@@ -176,10 +181,13 @@ def run_training(
                     num_epochs=num_epochs, weighted_random_sampler=weighted_random_sampler)
 
 
-def get_dataset_class(dataset_path):
+def get_dataset_class(dataset_path, force_per_residue):
     with open(dataset_path) as f:
         if len(f.readline().strip().split(',')) == 3:
-            dataset_class = CCPredictionDataset
+            if not force_per_residue:
+                dataset_class = CCPredictionDataset
+            else:
+                dataset_class = CCPredictionDatasetForceResidue
         else:
             dataset_class = CCPredictionDatasetPerResidue
     return dataset_class
@@ -241,28 +249,36 @@ def train_normal(batch_size,
 
 
 def get_weighted_train_sampler(train_dataset, train_sampler):
-    if isinstance(train_dataset.labels[0], torch.Tensor) or isinstance(train_dataset.labels[0], np.ndarray):
-        train_weights = []
-        for label_idx, label in enumerate(train_dataset.labels):
-            #logit = torch.numel(label[label < 1]) * np.log(train_dataset.pos_rate)
-            logit = train_dataset.pos[label_idx] * np.log(train_dataset.pos_rate)
-            #logit += torch.numel(label[label > 0]) * np.log(1.0 - train_dataset.pos_rate)
-            logit += (label.shape[0] - train_dataset.pos[label_idx]) * np.log(1.0 - train_dataset.pos_rate)
+
+    if (isinstance(train_dataset.labels[0], torch.Tensor) or isinstance(train_dataset.labels[0], np.ndarray)):
+        if torch.numel(next(iter(train_dataset))[1]) == 1:
+            train_weights = [train_dataset.pos_rate if pos < 1 else 1.0 - train_dataset.pos_rate for pos in train_dataset.pos]
+            train_weights_sum = sum(train_weights)
+            train_weights = [weight / train_weights_sum for weight in train_weights]
+            train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_dataset), replacement=True)
+        else:
+
+            train_weights = []
+            for label_idx, (_, label) in enumerate(train_dataset):
+                #logit = torch.numel(label[label < 1]) * np.log(train_dataset.pos_rate)
+                logit = train_dataset.pos[label_idx] * np.log(train_dataset.pos_rate)
+                #logit += torch.numel(label[label > 0]) * np.log(1.0 - train_dataset.pos_rate)
+                logit += (torch.numel(label) - train_dataset.pos[label_idx]) * np.log(1.0 - train_dataset.pos_rate)
 
 
-            # (length'th root is 1/length in logit space)
-            logit /= label.shape[0]
-            # weight = np.exp(weight)
-            train_weights.append(np.exp(logit))
-        train_weights_sum = sum(train_weights)
-        train_weights = [weight / train_weights_sum for weight in train_weights]
+                # (length'th root is 1/length in logit space)
+                logit /= torch.numel(label)
+                # weight = np.exp(weight)
+                train_weights.append(np.exp(logit))
+            train_weights_sum = sum(train_weights)
+            train_weights = [weight / train_weights_sum for weight in train_weights]
 
-        # train_sampler = GumbelMaxWeightedRandomSampler(logits=train_weights, num_samples=len(train_dataset))
-        train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_dataset), replacement=True)
+            # train_sampler = GumbelMaxWeightedRandomSampler(logits=train_weights, num_samples=len(train_dataset))
+            train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_dataset), replacement=True)
 
     else:
-        train_weights = [train_dataset.pos_rate if label < 1 else 1.0 - train_dataset.pos_rate for label in
-                         train_dataset.labels]
+        train_weights = [train_dataset.pos_rate if label < 1 else 1.0 - train_dataset.pos_rate for _, label in
+                         train_dataset]
         train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_dataset), replacement=True)
     return train_sampler
 
@@ -380,6 +396,9 @@ if __name__ == "__main__":
 
     parser.add_argument('-wrs', "--weighted_random_sampler", default=False, action='store_true')
 
+    # Gives residues instead of sequences but going through batch will be much slower during training
+    parser.add_argument("-fpr", "--force_per_residue", default=False, action='store_true')
+
     args = parser.parse_args()
 
     pprint(vars(args))
@@ -403,7 +422,8 @@ if __name__ == "__main__":
         model_class_path=model,
         max_seq_len=int(args.max_sequence_length),
         k_fold_cross_validation=int(args.k_fold_cross_validation) if args.k_fold_cross_validation else None,
-        weighted_random_sampler=args.weighted_random_sampler
+        weighted_random_sampler=args.weighted_random_sampler,
+        force_per_residue=args.force_per_residue
     )
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
