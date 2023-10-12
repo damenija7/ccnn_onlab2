@@ -1,6 +1,6 @@
 import math
 from collections import OrderedDict
-from typing import Dict, Any, Callable, List
+from typing import Dict, Any, Callable, List, Tuple
 
 import numpy as np
 import torch
@@ -14,7 +14,7 @@ from model_training.dataset.cc_prediction_dataset import CCPredictionDataset
 from model_training.dataset.cc_prediction_dataset_per_residue import CCPredictionDatasetPerResidue
 
 
-class Trainer:
+class TrainerYolo:
     def __init__(
         self,
         train_loader: DataLoader,
@@ -148,7 +148,7 @@ class Trainer:
             optimizer.zero_grad()
 
             # get predictions of model
-            preds = model(sequences, padding_mask=self.current_batch_padding_mask)
+            preds = model(sequences)
 
             if torch.isnan(preds).any():
                 raise Exception("Model generated prediction contains nan")
@@ -214,7 +214,7 @@ class Trainer:
             ).to(device)
 
             with torch.no_grad():
-                preds = model(sequences, self.current_batch_padding_mask)
+                preds = model(sequences)
 
 #                loss = criterion(preds, labels).item()
                 loss = self._get_loss(labels=labels, preds=preds, validation=True).item()
@@ -238,45 +238,42 @@ class Trainer:
         return {key: np.mean(val_epoch_stats[key]) if len(val_epoch_stats[key]) > 0 else 0.0 for key in val_epoch_stats}
 
 
-    def _get_loss(self, labels: torch.Tensor, preds: torch.Tensor, validation: bool):
-        # Weight positive label error with Negative Label Rate so that Positive Prediction becomes much more important due to its scarcity in training ! (unbalanced datset)
-        #loss = torchvision.ops.focal_loss.sigmoid_focal_loss(inputs=preds, targets=labels, alpha=1.0 - self.train_loader.dataset.pos_rate, reduction="sum")
+    def get_IoU(self, bbox_1: Tuple[int, int], bbox_2: Tuple[int, int]):
+        center_1, center_2 = bbox_1[0], bbox_2[1]
+        width_1, width_2 = bbox_1[1], bbox_2[1]
 
-        # Only consider preds for non-padded regions in batch ( i.e. preds for actual sequences, not paddings)
-        preds = preds[self.current_batch_padding_mask]
-        labels = labels[self.current_batch_padding_mask]
+        left_bound_1, right_bound_1 = center_1 - width_1/2, center_1 + width_1/2
+        left_bound_2, right_bound_2 = center_2 - width_2/2, center_2 + width_2/2
 
-        #previous_sensitivity = self.previous_validation_sensitivity if validation else self.previous_training_sensitivity
-        #loss = torchvision.ops.focal_loss.sigmoid_focal_loss(inputs=preds, targets=labels,
-        #                                                    alpha=previous_sensitivity * 0.5 + (1-previous_sensitivity) * 0.999 ,
-        #reduction="mean")
+        intersection = min(right_bound_1, right_bound_2) - max(left_bound_1, left_bound_2)
+        if intersection <= 0.0:
+            return 0.0
 
-        #if not hasattr(self, 'losser'):
-        #    self.losser = torch.nn.BCELoss(reduction='mean')
-        #loss = torch.nn.BCELoss(reduction='mean')(preds, labels)
+        union = (right_bound_1 - left_bound_1) + (right_bound_2 - left_bound_2) - intersection
 
-        #loss = torchvision.ops.focal_loss.sigmoid_focal_loss(inputs=preds, targets=labels,
-        #                                                     alpha=1.0 - (self.val_loader.dataset.pos_rate if validation else self.train_loader.dataset.pos_rate),
-        #                                              reduction="mean")
+        return intersection / union
 
-        if len(labels.shape) < 2:
-            labels = torch.unsqueeze(labels, dim=-1)
 
-        # Compensate for unbalanced dataset property by class weighting
-        if not self.weighted_random_sampler:
-            if validation:
-                # Using class weighting in the loss fn during validation leads to skewed (positive-favored) values
-                # That can lead to incorrect interpretations at the user's end
-                #return (nn.BCELoss()(preds, labels))
-                return (nn.BCELoss()(preds, labels))
-            else:
-                pos_rate = self.train_loader.dataset.pos_rate
-                weights = torch.full_like(preds, pos_rate)
-                weights[labels > 0] = 1 - pos_rate
-                return nn.BCELoss(weight=weights)(preds, labels)
+    def _get_loss(self, preds: torch.Tensor, ground_truth: torch.Tensor, validation: bool):
+        # preds: [batch_siz, grid_siz, 4]
 
-        # When compensate for unbalanced dataset property by oversampling (instead of loss function)
-        return nn.BCELoss()(preds, labels)
+        # sqrt of width predicted originally take square root
+        preds[:, :, 1] = preds[:, :, 1] * preds[:, :, 1]
+        # position offset is set relative to grid
+        for i in range(self.num_grids):
+            preds[:, i, 0] = (i * + preds[:, i, 0]) * self.grid_size
+
+
+
+
+    def scale(self, tensor: torch.Tensor, size: int = 1024):
+        # (batch, seq_len) -> (batch, chan_size=1, seq_len) unsqueezing required first
+        return torch.squeeze(nn.functional.interpolate(torch.unsqueeze(tensor, dim=1), size=size, mode='bilinear'), dim=1)
+
+
+
+
+
 
     def get_batch_stats(self, preds, labels) -> Dict[str, float]:
         with torch.no_grad():
