@@ -17,6 +17,8 @@ class CCPredictionDatasetRange(Dataset):
         skip_header: bool = True,
         id_sequence_label_idx: int = 0,
         max_seq_len: int = 512,
+
+        **kwargs
     ):
         self.prot_id_list, self.prot_sequence_list, self.prot_label_bounding_boxes_list = [], [], []
 
@@ -61,16 +63,17 @@ class CCPredictionDatasetRange(Dataset):
                     elif residue_label == '0':
                         if range_start:
                             bounding_box = self.get_bounding_box(cc_start_idx_incl=range_start, cc_end_idx_excl=residue_idx, sequence_length=len(prot_label))
-                            prot_label_boxes.append(torch.Tensor(bounding_box, dtype=torch.float32))
+                            prot_label_boxes.append(torch.tensor(bounding_box, dtype=torch.float32))
                             range_start = None
                 # If cc region at end of sequence
                 if range_start:
                     bounding_box = self.get_bounding_box(cc_start_idx_incl=range_start, cc_end_idx_excl=len(prot_label), sequence_length=len(prot_label))
-                    prot_label_boxes.append(torch.Tensor(bounding_box, dtype=torch.float32))
+                    prot_label_boxes.append(torch.tensor(bounding_box, dtype=torch.float32))
 
-                self.prot_label_bounding_boxes_list.append(prot_label_boxes)
+                self.prot_label_bounding_boxes_list.append(torch.stack(prot_label_boxes))
 
-        self.pos_rate = num_pos_residue_label / (num_pos_residue_label + num_neg_residue_label)
+        #self.pos_rate = num_pos_residue_label / (num_pos_residue_label + num_neg_residue_label)
+        self._set_attributes(self)
 
     def get_bounding_box(self, cc_start_idx_incl, cc_end_idx_excl, sequence_length: int):
         center, width = (cc_start_idx_incl + cc_end_idx_excl - 1) / 2, (cc_end_idx_excl - cc_start_idx_incl)
@@ -81,3 +84,20 @@ class CCPredictionDatasetRange(Dataset):
 
     def __getitem__(self, index):
         return self.prot_sequence_list[index], self.prot_label_bounding_boxes_list[index]
+
+
+    @staticmethod
+    def _set_attributes(dataset):
+        P, N = 0, 0
+
+        for seq, labels in dataset:
+            # width (0..1) * sequence length
+            p_seq = (len(seq) * sum(bbox[1] for bbox in labels)).item()
+            n_seq = len(seq) - p_seq
+
+            P += p_seq
+            N += n_seq
+
+        dataset.pos_rate = P / (P + N)
+
+

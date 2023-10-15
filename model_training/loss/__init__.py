@@ -3,118 +3,86 @@ from typing import List
 from torch.nn.modules.loss import _Loss, BCELoss
 from torch import Tensor
 
+from model_training.loss.matching import HungarianMatcher
+from model_training.loss.util import get_iou
 
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
 """
 Modules to compute the matching cost and solve the corresponding LSAP.
 """
 import torch
-from scipy.optimize import linear_sum_assignment
-from torch import nn
-
-
-
-class HungarianMatcher(nn.Module):
-    """This class computes an assignment between the targets and the predictions of the network
-
-    For efficiency reasons, the targets don't include the no_object. Because of this, in general,
-    there are more predictions than targets. In this case, we do a 1-to-1 matching of the best predictions,
-    while the others are un-matched (and thus treated as non-objects).
-    """
-
-    def __init__(self, cost_class: float = 1, cost_bbox: float = 1, cost_giou: float = 1):
-        """Creates the matcher
-
-        Params:
-            cost_class: This is the relative weight of the classification error in the matching cost
-            cost_bbox: This is the relative weight of the L1 error of the bounding box coordinates in the matching cost
-            cost_giou: This is the relative weight of the giou loss of the bounding box in the matching cost
-        """
-        super().__init__()
-        self.cost_class = cost_class
-        self.cost_bbox = cost_bbox
-        self.cost_giou = cost_giou
-        assert cost_class != 0 or cost_bbox != 0 or cost_giou != 0, "all costs cant be 0"
-
-    @torch.no_grad()
-    def forward(self, outputs, targets):
-        """ Performs the matching
-
-        Params:
-            outputs: This is a dict that contains at least these entries:
-                 "pred_logits": Tensor of dim [batch_size, num_queries, num_classes] with the classification logits
-                 "pred_boxes": Tensor of dim [batch_size, num_queries, 4] with the predicted box coordinates
-
-            targets: This is a list of targets (len(targets) = batch_size), where each target is a dict containing:
-                 "labels": Tensor of dim [num_target_boxes] (where num_target_boxes is the number of ground-truth
-                           objects in the target) containing the class labels
-                 "boxes": Tensor of dim [num_target_boxes, 4] containing the target box coordinates
-
-        Returns:
-            A list of size batch_size, containing tuples of (index_i, index_j) where:
-                - index_i is the indices of the selected predictions (in order)
-                - index_j is the indices of the corresponding selected targets (in order)
-            For each batch element, it holds:
-                len(index_i) = len(index_j) = min(num_queries, num_target_boxes)
-        """
-        bs, num_queries = outputs.shape[:2]
-
-        # We flatten to compute the cost matrices in a batch
-        out_prob = outputs[:, :, -1].flatten()  # [batch_size * num_queries]
-        out_bbox = outputs[:, :, :2].flatten(0, 1)  # [batch_size * num_queries, 2]
-
-        # Also concat the target labels and boxes
-        tgt_prob = torch.cat([target[-1] for target in targets])
-        tgt_bbox = torch.cat([target[:2] for target in targets])
-
-        # Compute the classification cost. Contrary to the loss, we don't use the NLL,
-        # but approximate it in 1 - proba[target class].
-        # The 1 is a constant that doesn't change the matching, it can be ommitted.
-        cost_class = BCELoss()(out_prob, tgt_prob)
-
-        # Compute the L1 cost between boxes
-        cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)
-
-        # Compute the giou cost betwen boxes
-        cost_giou = -self.get_iou(out_bbox, tgt_bbox)
-
-        # Final cost matrix
-        C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
-        C = C.view(bs, num_queries, -1).cpu()
-
-        sizes = [len(v["boxes"]) for v in targets]
-        indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]
-        return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
-
-
-    def get_iou(self, boxes_1: torch.Tensor, boxes_2: torch.Tensor) -> torch.Tensor:
-        boxes_1_left, boxes_1_right = boxes_1[:, 0] - boxes_1[:, 1]/2, boxes_1[:, 0] - boxes_1[:, 1]/2
-        boxes_2_left, boxes_2_right = boxes_2[:, 0] - boxes_2[:, 1] / 2, boxes_2[:, 0] - boxes_2[:, 1] / 2
-
-        intersection = torch.zeros(size=(boxes_1.shape[0], boxes_2.shape[1]), device=boxes_1.device)
-        union = torch.zeros(size=(boxes_1.shape[0], boxes_2.shape[1]), device=boxes_1.device)
-
-        for i in range(boxes_1.shape[0]):
-            for j in range(boxes_2.shape[1]):
-                single_intersection = min(0.0, min(boxes_1_right[i], boxes_2_right[j]) - max(boxes_1_left[i], boxes_2_left[j]))
-                single_union = (boxes_1_right[i] - boxes_1_left[i]) + (boxes_2_right[j] - boxes_2_right[j])
-
-                intersection[i, j] = single_intersection
-                union[i, j] = single_union
-
-        return intersection / union
+import torch.nn.functional as F
 
 
 
 
 
-def build_matcher(args):
-    return HungarianMatcher(cost_class=args.set_cost_class, cost_bbox=args.set_cost_bbox, cost_giou=args.set_cost_giou)
 
 class DetrLoss(_Loss):
-    def __init__(self) -> None:
+    def __init__(self, pos_rate: float) -> None:
         super().__init__()
 
-    def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
-        return HungarianMatcher()(preds, targets)
+        self.matcher = HungarianMatcher()
+        self.pos_rate = pos_rate
 
+    def forward(self, preds: Tensor, targets: List[Tensor]) -> Tensor:
+        target_lens: List[int] = [len(target) for target in targets]
+        targets_padded = torch.nn.utils.rnn.pad_sequence(targets, batch_first=True)
+
+        targets_padded_with_empty_targets = torch.cat((targets_padded,torch.zeros(size=(preds.shape[0], preds.shape[1] - targets_padded.shape[1], targets_padded.shape[-1]), dtype=targets_padded.dtype, device=targets_padded.device)),
+                                                        dim=1)
+        targets_padded_with_empty_targets = torch.nn.functional.pad(targets_padded_with_empty_targets, (0, 1))
+
+
+        for i, t_len in enumerate(target_lens):
+            targets_padded_with_empty_targets[i, :t_len, -1] = 1.0
+
+
+
+
+        matchings = self.matcher(outputs=preds, targets=targets_padded_with_empty_targets)
+        #matchings = torch.stack([matching[1] for matching in matchings])
+
+        preds_reordered = preds.clone()
+
+        for batch_idx, matching in enumerate(matchings):
+            preds_reordered[batch_idx] = preds[batch_idx, matching[1]]
+
+        loss = self.loss_labels(preds=preds, targets_padded_with_empty_targets=targets_padded_with_empty_targets, target_lens=target_lens)
+        loss = loss + self.loss_boxes(preds=preds, targets=targets, target_lens=target_lens)
+
+        return loss
+
+
+
+
+    def loss_labels(self, preds, targets_padded_with_empty_targets, target_lens):
+        weights = torch.full_like(preds[:, :, -1], self.pos_rate)
+
+        for batch_idx, target_len in enumerate(target_lens):
+            weights[batch_idx, :target_len] = 1 - self.pos_rate
+
+        return BCELoss(weight=weights)(preds[:, :, -1], targets_padded_with_empty_targets[:, :, -1])
+
+
+    def loss_boxes(self, preds, targets, target_lens):
+        loss_dist = 0.0
+        loss_iou = 0.0
+
+        num_boxes = 0
+
+        for batch_idx, target_len in enumerate(target_lens):
+            pred_boxes = preds[batch_idx, :target_len, :2]
+            target_boxes = targets[batch_idx][:target_len, :2]
+
+            loss_dist = loss_dist + F.l1_loss(pred_boxes,
+                                    target_boxes, reduction='none').sum()
+            num_boxes += target_len
+
+            loss_iou = loss_iou + get_iou(pred_boxes, target_boxes).sum()
+
+        loss_dist = loss_dist / num_boxes
+        loss_iou = loss_iou / num_boxes
+
+
+        return loss_dist + loss_iou

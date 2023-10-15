@@ -30,20 +30,10 @@ class Transformer(nn.Module):
 
         self.output_query = nn.Parameter(torch.rand(100, input_dim))
 
-    def forward(self, x, padding_mask):
-        output = []
-
-        for prot_idx in range(x.shape[0]):
-            values = []
-            current_val = self.output_query
-            for i in range(x.shape[1]):
-                current_val = self.decoder(memory=x[prot_idx], tgt=current_val)
-                values.append(current_val)
-            output.append(torch.cat(values))
-
-        output = self.classifier(torch.cat(output))
-        if output.dim() < 3:
-            output = output.unsqueeze(0)
+    def forward(self, x, padding_mask = None):
+        # TODO Parallel processing
+        output = torch.stack([self.decoder(memory=x[i], tgt=self.output_query) for i in range(len(x))])
+        output = self.classifier(output)
 
 
         return output

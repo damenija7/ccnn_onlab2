@@ -1,6 +1,6 @@
 import math
 from collections import OrderedDict
-from typing import Dict, Any, Callable, List, Tuple
+from typing import Dict, Any, Callable, List
 
 import numpy as np
 import torch
@@ -12,15 +12,16 @@ from tqdm.auto import tqdm
 
 from model_training.dataset.cc_prediction_dataset import CCPredictionDataset
 from model_training.dataset.cc_prediction_dataset_per_residue import CCPredictionDatasetPerResidue
+from model_training.loss import DetrLoss
 
 
-class TrainerYolo:
+class TrainerRange:
     def __init__(
-        self,
-        train_loader: DataLoader,
-        val_loader: DataLoader,
-        sequence_embedder: Callable = lambda x: x,
-        weighted_random_sampler: bool = False
+            self,
+            train_loader: DataLoader,
+            val_loader: DataLoader,
+            sequence_embedder: Callable = lambda x: x,
+            weighted_random_sampler: bool = False
     ):
         self.train_loader, self.val_loader = train_loader, val_loader
         self.sequence_embedder: Callable = sequence_embedder
@@ -29,17 +30,8 @@ class TrainerYolo:
         self.weighted_random_sampler = weighted_random_sampler
 
         # Transform Sequence based on whether given dataset is sequence_residue/row or sequence/row
-        #
-        #
-        if self.get_dataset_type(self.val_loader.dataset) == CCPredictionDataset:
-            self.transform_val_sequences = lambda sequences : [self.sequence_embedder.embed(sequence) for sequence in sequences]
-        else:
-            self.transform_val_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
-
-        if self.get_dataset_type(self.train_loader.dataset) == CCPredictionDataset:
-            self.transform_train_sequences = lambda sequences : [self.sequence_embedder.embed(sequence) for sequence in sequences]
-        else:
-            self.transform_train_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
+        self.transform_train_sequences = lambda sequences: [self.sequence_embedder.embed(sequence) for sequence in
+                                                            sequences]
 
     def get_dataset_type(self, dataset):
         if isinstance(dataset, CCPredictionDataset):
@@ -60,7 +52,7 @@ class TrainerYolo:
         return CCPredictionDatasetPerResidue
 
     def train(
-        self, model: nn.Module, embedder: Callable, num_epochs: int, best_model_save_file_path: str
+            self, model: nn.Module, embedder: Callable, num_epochs: int, best_model_save_file_path: str
     ) -> Dict[str, Any]:
         train_stats, val_stats = {}, {}
         best_loss = math.inf
@@ -68,10 +60,9 @@ class TrainerYolo:
         self.sequence_embedder = embedder
 
         optimizer = optim.Adam(model.parameters())
-        #optimizer = optim.RMSprop(model.parameters())
+        # optimizer = optim.RMSprop(model.parameters())
 
         self.previous_training_sensitivity, self.previous_validation_sensitivity = None, None
-
 
         for epoch_idx in range(num_epochs):
             tqdm.write(f"At Epoch {epoch_idx}")
@@ -112,8 +103,6 @@ class TrainerYolo:
                 f"\nTrain_Loss: {train_stats['loss'][-1]}, Val_Loss: {val_stats['loss'][-1]}, Val_Accuracy: {val_stats['accuracy'][-1]} Val_Sensitivity: {val_stats['sensitivity'][-1]}, Val_Precision: {val_stats['precision'][-1]}, Val_F1: {val_stats['F1'][-1]}"
             )
 
-
-
         return {
             "train": train_stats,
             "val": val_stats
@@ -124,10 +113,9 @@ class TrainerYolo:
 
         if self.previous_training_sensitivity is None:
             self.previous_training_sensitivity = 0.0
-        #self.previous_training_sensitivity = 0.0
+        # self.previous_training_sensitivity = 0.0
 
         device = next(model.parameters()).device
-
 
         model.train()
         for sequences, labels in tqdm_training_batch:
@@ -136,13 +124,13 @@ class TrainerYolo:
             sequences_orig, labels_orig = sequences, labels
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
-            labels = pad_sequence(labels, batch_first=True).to(device)
+            labels  = [label.to(device) for label in labels]
 
             seq_lens = [len(seq) for seq in sequences]
             self.set_current_batch_padding_mask(labels, seq_lens)
 
             sequences = self.transform_train_sequences(sequences)
-            sequences = pad_sequence(sequences, batch_first=True).to(device)
+            sequences = [sequence.to(device) for sequence in sequences]
 
             # reset gradients stored in optimizer
             optimizer.zero_grad()
@@ -163,12 +151,32 @@ class TrainerYolo:
             optimizer.step()
 
 
+            predicted_labels = [torch.zeros_like(seq[:, 0], dtype=torch.bool) for seq in sequences]
+            targets_labels = [x.clone() for x in predicted_labels]
+            for batch_idx, seq in enumerate(sequences):
+                seq_len = len(seq)
+
+                for center, width, probability in preds[batch_idx]:
+                    center = round(seq_len * center.item())
+                    width = round(seq_len * width.item())
+
+                    if probability > 0.5:
+                        predicted_labels[batch_idx][center - width // 2:center + width // 2 + 1] = True
+
+                for center, width in labels[batch_idx]:
+                    center = round(seq_len * center.item())
+                    width = round(seq_len * width.item())
+
+                    targets_labels[batch_idx][center - width // 2:center + width // 2 + 1] = True
+
+
             train_batch_stats = self.get_batch_stats(
-                labels=labels, preds=preds
+                preds=predicted_labels, labels=targets_labels
             )
             train_batch_stats['loss'] = loss.item()
             try:
-                self.previous_training_sensitivity = self.previous_training_sensitivity * (1 - 0.0025) + float(train_batch_stats['sensitivity']) * 0.0025
+                self.previous_training_sensitivity = self.previous_training_sensitivity * (1 - 0.0025) + float(
+                    train_batch_stats['sensitivity']) * 0.0025
             except:
                 pass
 
@@ -176,26 +184,29 @@ class TrainerYolo:
                 if val > -1:
                     train_epoch_stats.setdefault(key, []).append(val)
 
+            tqdm_training_batch.set_description(
+                f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
 
-
-            tqdm_training_batch.set_description(f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
-
-        return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in train_epoch_stats}
+        return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in
+                train_epoch_stats}
 
     def set_current_batch_padding_mask(self, labels, seq_lens):
-        self.current_batch_padding_mask = torch.empty(labels.shape[:2], dtype=torch.bool, device=labels.device)
-        for i, seq_len in enumerate(seq_lens):
-            self.current_batch_padding_mask[i, :seq_len] = True
+        self.label_padding_mask = torch.empty(
+            size=(len(labels), max(len(label) for label in labels)), dtype=torch.bool, device=labels[0].device)
+
+        for i, label in enumerate(labels):
+            self.label_padding_mask[i, :len(label)] = True
+
+
 
     def validate_epoch(self, model):
         val_epoch_stats = {'loss': [], 'accuracy': [], 'sensitivity': [], 'precision': [], 'F1': []}
 
         if self.previous_validation_sensitivity is None:
             self.previous_validation_sensitivity = 0.0
-        #self.previous_validation_sensitivity = 0.0
+        # self.previous_validation_sensitivity = 0.0
 
         device = next(model.parameters()).device
-
 
         model.eval()
         tqdm_val_batch = tqdm(self.val_loader, "Validation Batch")
@@ -203,28 +214,28 @@ class TrainerYolo:
             torch.cuda.empty_cache()
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
-            labels = pad_sequence(labels, batch_first=True).to(device)
+            labels = [label.to(device) for label in labels]
 
             seq_lens = [len(seq) for seq in sequences]
             self.set_current_batch_padding_mask(labels, seq_lens)
 
             sequences = self.transform_val_sequences(sequences)
-            sequences = pad_sequence(
-                sequences, batch_first=True
-            ).to(device)
+            sequences = [sequence.to(device) for sequence in sequences]
 
             with torch.no_grad():
-                preds = model(sequences)
+                preds = model(sequences, self.current_batch_padding_mask)
 
-#                loss = criterion(preds, labels).item()
+                #                loss = criterion(preds, labels).item()
                 loss = self._get_loss(labels=labels, preds=preds, validation=True).item()
 
                 val_batch_stats = self.get_batch_stats(
-                    labels=labels, preds=preds
+                    labels_reordered=labels, preds=preds
                 )
                 val_batch_stats['loss'] = loss
                 try:
-                    self.previous_validation_sensitivity = self.previous_validation_sensitivity * (1 - 0.001) + float(val_batch_stats['sensitivity']) * 0.001 if not type(val_batch_stats['sensitivity'], str) else self.previous_validation_sensitivity
+                    self.previous_validation_sensitivity = self.previous_validation_sensitivity * (1 - 0.001) + float(
+                        val_batch_stats['sensitivity']) * 0.001 if not type(val_batch_stats['sensitivity'],
+                                                                            str) else self.previous_validation_sensitivity
                 except:
                     pass
 
@@ -232,63 +243,21 @@ class TrainerYolo:
                     if val > -1:
                         val_epoch_stats.setdefault(key, []).append(val)
 
-
-                tqdm_val_batch.set_description(f'Validation Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in val_batch_stats.items())}')
+                tqdm_val_batch.set_description(
+                    f'Validation Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in val_batch_stats.items())}')
 
         return {key: np.mean(val_epoch_stats[key]) if len(val_epoch_stats[key]) > 0 else 0.0 for key in val_epoch_stats}
 
+    def _get_loss(self, labels: List[torch.Tensor], preds: torch.Tensor, validation: bool):
+        dataset = self.train_loader.dataset if not validation else self.val_loader
 
-    def get_IoU(self, bbox_1: Tuple[int, int], bbox_2: Tuple[int, int]):
-        center_1, center_2 = bbox_1[0], bbox_2[1]
-        width_1, width_2 = bbox_1[1], bbox_2[1]
-
-        left_bound_1, right_bound_1 = center_1 - width_1/2, center_1 + width_1/2
-        left_bound_2, right_bound_2 = center_2 - width_2/2, center_2 + width_2/2
-
-        intersection = min(right_bound_1, right_bound_2) - max(left_bound_1, left_bound_2)
-        if intersection <= 0.0:
-            return 0.0
-
-        union = (right_bound_1 - left_bound_1) + (right_bound_2 - left_bound_2) - intersection
-
-        return intersection / union
-
-
-    def _get_loss(self, preds: torch.Tensor, ground_truth: torch.Tensor, validation: bool):
-        # preds: [batch_siz, grid_siz, 4]
-
-        # sqrt of width predicted originally take square root
-        preds[:, :, 1] = preds[:, :, 1] * preds[:, :, 1]
-        # position offset is set relative to grid
-        for i in range(self.num_grids):
-            preds[:, i, 0] = (i * + preds[:, i, 0]) * self.grid_size
-
-
-
-
-    def scale(self, tensor: torch.Tensor, size: int = 1024):
-        # (batch, seq_len) -> (batch, chan_size=1, seq_len) unsqueezing required first
-        return torch.squeeze(nn.functional.interpolate(torch.unsqueeze(tensor, dim=1), size=size, mode='bilinear'), dim=1)
-
-
-
-
-
+        return DetrLoss(pos_rate=dataset.pos_rate)(preds=preds, targets=labels)
 
     def get_batch_stats(self, preds, labels) -> Dict[str, float]:
         with torch.no_grad():
-            preds_round = preds.round()
+            preds, labels = torch.cat(preds), torch.cat(labels)
 
-            # TODO multiple channel
-            if len(labels.shape) >= 3:
-                labels = torch.any(labels, dim=-1)
-                preds_round = torch.any(preds_round, dim=-1)
-            else:
-                labels = torch.unsqueeze(labels, dim=-1)
-
-            correct_preds = preds_round == labels
-
-
+            correct_preds = preds == labels
 
             correct_preds_positive = correct_preds[labels > 0]
             correct_preds_negative = correct_preds[labels < 1]
@@ -297,10 +266,13 @@ class TrainerYolo:
             TN = correct_preds_negative.sum().item()
             FP = torch.numel(correct_preds_negative) - TN
 
+
+
+
         accuracy = (TP + TN) / (TP + TN + FP + FN)
         sensitivity = TP / (TP + FN) if (TP + FN) > 0 else -1
         precision = TP / (TP + FP) if (TP + FP) > 0 else -1
-        F1 = 2 * TP / (2*TP + FP + FN) if (2*TP + FP + FN) > 0 else -1
+        F1 = 2 * TP / (2 * TP + FP + FN) if (2 * TP + FP + FN) > 0 else -1
 
         # accuracy = (preds_round == labels).float().mean().item()
         return {
