@@ -1,10 +1,40 @@
 import math
 from typing import Callable
 
+import numpy as np
 import torch
 import torchvision
 from torch import nn
 from torch import functional as F
+
+
+class ConvRange(nn.Module):
+    def __init__(self, input_dim: int = 1024):
+        super().__init__()
+
+        in_features = input_dim
+
+        self.conv = nn.Sequential(
+            nn.Conv1d(in_channels=in_features, out_channels=in_features//2, kernel_size=3, padding=3//2),
+            nn.ReLU(),
+
+            nn.Conv1d(in_channels=in_features//2, out_channels=in_features//2, kernel_size=3, padding=3//2),
+            nn.ReLU(),
+            nn.AvgPool1d(kernel_size=16),
+
+
+
+            nn.Conv1d(in_channels=in_features//2, out_channels=3, kernel_size=3, padding=3//2)
+        )
+
+        self.classifier = torch.nn.Sigmoid()
+
+    def forward(self, x):
+        x_resized = [
+            torch.nn.functional.interpolate(x[i].permute(1, 0).unsqueeze(-2), size=[1024]).squeeze(dim=-2).permute(1, 0)
+            for i in range(len(x))]
+
+        return self.classifier(torch.stack([self.conv(x_resized[i].permute(-1, -2)).permute(-1, -2) for i in range(len(x))]))
 
 
 
@@ -33,7 +63,9 @@ class Transformer(nn.Module):
 
     def forward(self, x, padding_mask = None):
         # TODO Parallel processing
-        output = torch.stack([self.decoder(memory=torchvision.transforms.functional.resize(x[i], [1024]), tgt=self.output_query) for i in range(len(x))])
+        # x = [torch.nn.functional.interpolate(x[i].permute(1, 0).unsqueeze(-2), size=[1024]).squeeze(dim=-2).permute(1, 0) for i in range(len(x))]
+
+        output = torch.stack([self.decoder(memory=x[i], tgt=self.output_query) for i in range(len(x))])
         output = self.classifier(output)
 
 

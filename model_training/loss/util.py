@@ -25,6 +25,11 @@ def _get_iou_batch(boxes_1: torch.Tensor, boxes_2: torch.Tensor):
     #         iou[i, j] = single_intersection / single_union
 
     iou = iou.clamp(min=0.0)
+
+    iou = torch.nan_to_num(iou)
+
+    assert not torch.isnan(iou).any() and not torch.isnan(union).any()
+
     return iou, union
 
 def get_giou_batch(boxes_1, boxes_2):
@@ -39,7 +44,11 @@ def get_giou_batch(boxes_1, boxes_2):
     hull = (torch.max(boxes_1_right[:, None], boxes_2_right[None, :]) - torch.min(boxes_1_left[:, None],
                                                                                 boxes_2_left[None, :])).clamp(min=0.0)
 
-    return iou - (hull - union) / hull
+    res = iou - (hull - union) / hull
+
+    assert not torch.isnan(res).any()
+
+    return res
 
 
 
@@ -51,7 +60,9 @@ def get_giou(boxes_1, boxes_2 ):
 
     hull = torch.max(boxes_1_right, boxes_2_right) - torch.min(boxes_1_left, boxes_2_left).clamp(min=0.0)
 
-    return iou - (hull - union) / hull
+    res = iou - (hull - union) / hull
+
+    return res
 
 
 

@@ -64,8 +64,8 @@ class DetrLoss(_Loss):
     def loss_labels(self, preds, targets_padded_reordered, targets_padded_reordered_padded_mask):
         pos_target_rate_per_batch = max(1e-8, targets_padded_reordered_padded_mask.sum() / targets_padded_reordered_padded_mask.numel())
 
-        weights = torch.full_like(preds[:, :, -1], pos_target_rate_per_batch / 10)
-        weights[targets_padded_reordered_padded_mask] = 1 - pos_target_rate_per_batch / 10
+        weights = torch.full_like(preds[:, :, -1], pos_target_rate_per_batch)
+        weights[~targets_padded_reordered_padded_mask] = 1 - pos_target_rate_per_batch
 
 
 
@@ -83,7 +83,7 @@ class DetrLoss(_Loss):
         target_boxes = non_padded_box_targets[:, :2]
 
         loss_dist = F.l1_loss(pred_boxes, target_boxes, reduction='none').sum()
-        loss_giou = num_boxes - get_giou(pred_boxes, target_boxes).sum()
+        loss_giou = (num_boxes - get_giou(pred_boxes, target_boxes).sum())
 
         loss_dist = loss_dist / num_boxes
         loss_giou = loss_giou / num_boxes

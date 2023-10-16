@@ -36,23 +36,7 @@ class TrainerRange:
         self.transform_val_sequences = lambda sequences: [self.sequence_embedder.embed(sequence) for sequence in
                                                             sequences]
 
-    def get_dataset_type(self, dataset):
-        if isinstance(dataset, CCPredictionDataset):
-            return CCPredictionDataset
 
-        if not hasattr(dataset, 'dataset'):
-            return CCPredictionDatasetPerResidue
-
-        if isinstance(dataset.dataset, CCPredictionDataset):
-            return CCPredictionDataset
-
-        if not hasattr(dataset.dataset, 'dataset'):
-            return CCPredictionDatasetPerResidue
-
-        if isinstance(dataset.dataset.dataset, CCPredictionDataset):
-            return CCPredictionDataset
-
-        return CCPredictionDatasetPerResidue
 
     def train(
             self, model: nn.Module, embedder: Callable, num_epochs: int, best_model_save_file_path: str
@@ -172,7 +156,7 @@ class TrainerRange:
                     train_epoch_stats.setdefault(key, []).append(val)
 
             tqdm_training_batch.set_description(
-                f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
+                f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val >= 0 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
 
         return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in
                 train_epoch_stats}
@@ -189,13 +173,16 @@ class TrainerRange:
                     width = round(seq_len * width.item())
 
                     if probability > 0.5:
-                        predicted_labels[batch_idx][center - width // 2:center + width // 2 + 1] = True
+                        left, right = max(0, center - width // 2), min(center + width // 2 + 1, seq_len)
+                        predicted_labels[batch_idx][left:right] = True
 
                 for center, width in labels[batch_idx]:
                     center = round(seq_len * center.item())
                     width = round(seq_len * width.item())
 
-                    targets_labels[batch_idx][center - width // 2:center + width // 2 + 1] = True
+                    left, right = max(0, center - width // 2), min(center + width // 2 + 1, seq_len)
+
+                    targets_labels[batch_idx][left:right] = True
         return predicted_labels, targets_labels
 
     def set_current_batch_padding_mask(self, labels, seq_lens):
@@ -269,6 +256,10 @@ class TrainerRange:
 
             correct_preds = preds == labels
 
+            i = (preds & labels).sum().item()
+            u = (preds | labels).sum().item()
+            iou = i/u if u > 0.0 else -1
+
             correct_preds_positive = correct_preds[labels > 0]
             correct_preds_negative = correct_preds[labels < 1]
             TP = correct_preds_positive.sum().item()
@@ -289,5 +280,6 @@ class TrainerRange:
             'accuracy': accuracy,
             'sensitivity': sensitivity,
             'precision': precision,
-            'F1': F1
+            'F1': F1,
+            'iou': iou
         }

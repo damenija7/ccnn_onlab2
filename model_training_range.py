@@ -43,7 +43,7 @@ def run_training(
         model_class_path,
         max_seq_len: int,
         k_fold_cross_validation: Optional[int] = None,
-        weighted_random_sampler: bool = True,
+        weighted_random_sampler: bool = False,
         **kwargs
 ):
     generator = torch.Generator().manual_seed(42)

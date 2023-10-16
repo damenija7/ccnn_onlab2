@@ -58,18 +58,28 @@ class HungarianMatcher(nn.Module):
         # Also concat the target labels and boxes
         tgt_prob = targets[:, :, -1].flatten()
         tgt_bbox = targets[:, :, :2].flatten(0, 1)
+        tgt_empty_object_mask = tgt_prob < 0.5
 
         # Compute the classification cost. Contrary to the loss, we don't use the NLL,
         # but approximate it in 1 - proba[target class].
         # The 1 is a constant that doesn't change the matching, it can be ommitted.
-        cost_class = BCELoss(reduction='none')(out_prob, tgt_prob)
-        # cost_class = cost_class.expand(out_prob.shape[0], tgt_prob.shape[0]).transpose(0, 1)
+#        cost_class = BCELoss(reduction='none')(out_prob, tgt_prob)
+        #cost_class = - (((tgt_prob[None, :]) * (out_prob.clamp(min=1e-8).log()[:, None])) + (((1 - tgt_prob)[None, :]) * ((1 - out_prob).clamp(min=1e-8).log())[:, None]))
+        cost_class = torch.zeros(size=(out_bbox.shape[0], tgt_bbox.shape[0]), dtype=tgt_prob.dtype, device=tgt_prob.device)
+        cost_class[:, ~tgt_empty_object_mask] = -out_prob[:, None]
+        cost_class[:, tgt_empty_object_mask] = 0.0
+        # Account for class imbalance
+        # TODO other than 10
+        cost_class[:, tgt_empty_object_mask] /= 10
 
         # Compute the L1 cost between boxes
         cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)
-
         # Compute the giou cost betwen boxes
-        cost_giou = -get_giou_batch(out_bbox, tgt_bbox)
+        cost_giou = 1.0-get_giou_batch(out_bbox, tgt_bbox)
+
+        # Dont count bbox and giou for empty objects
+        cost_bbox[:, tgt_empty_object_mask] = 0.0
+        cost_giou[:, tgt_empty_object_mask] = 0.0
 
         # Final cost matrix
         C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
