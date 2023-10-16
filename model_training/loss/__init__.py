@@ -25,6 +25,10 @@ class DetrLoss(_Loss):
         self.matcher = HungarianMatcher()
         self.pos_rate = pos_rate
 
+        self.loss_class_weight = 1.0
+
+        self.loss_boxes_weight = 1.0
+
     def forward(self, preds: Tensor, targets: List[Tensor]) -> Tensor:
         target_lens: List[int] = torch.tensor([len(target) for target in targets])
         max_target_len = max(target_lens)
@@ -33,7 +37,10 @@ class DetrLoss(_Loss):
 
         targets_padded = torch.zeros(size=(preds.shape[0], preds.shape[1], 2), dtype=targets[0].dtype, device=targets[0].device)
         for batch_idx, batch_targets in enumerate(targets):
-            targets_padded[batch_idx] = torch.cat([batch_targets] + [torch.zeros_like(batch_targets[0]).unsqueeze(dim=0) for _ in range(preds.shape[1] - len(batch_targets))], dim=0)
+            batch_padding = [torch.zeros(size=(1, 2), device=preds.device) for _ in range(preds.shape[1] - len(batch_targets))]
+            if len(batch_targets) > 0:
+                batch_padding = [batch_targets] + batch_padding
+            targets_padded[batch_idx] = torch.cat(batch_padding, dim=0)
 
         # 1.0 label exists prob for non padded targets 0.0 prob for padded targets
         targets_padded = torch.nn.functional.pad(targets_padded, (0, 1))
@@ -53,23 +60,30 @@ class DetrLoss(_Loss):
             targets_padded_reordered_padded_mask[batch_idx] = (matching[1] < target_lens[batch_idx])
 
         loss = 0.0
-        loss = self.loss_labels(preds=preds, targets_padded_reordered=targets_padded_reordered,targets_padded_reordered_padded_mask=targets_padded_reordered_padded_mask)
-        loss = loss + self.loss_boxes(preds=preds, targets_padded_reordered=targets_padded_reordered,targets_padded_reordered_padded_mask=targets_padded_reordered_padded_mask)
+        loss = self.loss_class_weight * self.loss_class(preds=preds, targets_padded_reordered=targets_padded_reordered, targets_padded_reordered_padded_mask=targets_padded_reordered_padded_mask)
+        loss = loss + self.loss_boxes_weight * self.loss_boxes(preds=preds, targets_padded_reordered=targets_padded_reordered,targets_padded_reordered_padded_mask=targets_padded_reordered_padded_mask)
 
         return loss
 
 
 
+    def loss_class(self, preds, targets_padded_reordered, targets_padded_reordered_padded_mask):
+        pos_target_rate_per_batch = max(1e-3, targets_padded_reordered_padded_mask.sum() / targets_padded_reordered_padded_mask.numel())
 
-    def loss_labels(self, preds, targets_padded_reordered, targets_padded_reordered_padded_mask):
-        pos_target_rate_per_batch = max(1e-8, targets_padded_reordered_padded_mask.sum() / targets_padded_reordered_padded_mask.numel())
+        #weights = torch.full_like(preds[:, :, -1], pos_target_rate_per_batch)
+        #weights[~targets_padded_reordered_padded_mask] = 1 - pos_target_rate_per_batch
 
-        weights = torch.full_like(preds[:, :, -1], pos_target_rate_per_batch)
-        weights[~targets_padded_reordered_padded_mask] = 1 - pos_target_rate_per_batch
+        pred_probs = preds[::, -1]
+        target_probs = targets_padded_reordered[::, -1]
+
+        cost_class = - (
+            (1 - pos_target_rate_per_batch) * target_probs * pred_probs.clamp(min=1e-8).log() +
+                        pos_target_rate_per_batch * (1 - target_probs) * (1 - pred_probs).clamp(min=1e-8).log()
+                        )
 
 
-
-        return BCELoss(weight=weights)(preds[:, :, -1], targets_padded_reordered[:, :, -1])
+        return cost_class.sum()
+        #return BCELoss(weight=weights)(preds[:, :, -1], targets_padded_reordered[:, :, -1])
 
 
     def loss_boxes(self, preds, targets_padded_reordered, targets_padded_reordered_padded_mask):

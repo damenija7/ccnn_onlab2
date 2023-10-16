@@ -70,7 +70,7 @@ class CCPredictionDatasetRange(Dataset):
                     bounding_box = self.get_bounding_box(cc_start_idx_incl=range_start, cc_end_idx_excl=len(prot_label), sequence_length=len(prot_label))
                     prot_label_boxes.append(torch.tensor(bounding_box, dtype=torch.float32))
 
-                self.prot_label_bounding_boxes_list.append(torch.stack(prot_label_boxes))
+                self.prot_label_bounding_boxes_list.append(torch.stack(prot_label_boxes) if len(prot_label_boxes) > 0 else torch.tensor([], dtype=torch.float32).expand(0, 0))
 
         #self.pos_rate = num_pos_residue_label / (num_pos_residue_label + num_neg_residue_label)
         self._set_attributes(self)
@@ -92,12 +92,12 @@ class CCPredictionDatasetRange(Dataset):
 
         for seq, labels in dataset:
             # width (0..1) * sequence length
-            p_seq = (len(seq) * sum(bbox[1] for bbox in labels)).item()
+            p_seq = (len(seq) * sum(bbox[1] for bbox in labels))
             n_seq = len(seq) - p_seq
 
             P += p_seq
             N += n_seq
 
-        dataset.pos_rate = P / (P + N)
+        dataset.pos_rate = float(P / (P + N))
 
 

@@ -50,11 +50,11 @@ class Transformer(nn.Module):
 #            raise Exception("Must specify a sequence embedder")
 
         # 2. embedding tensor add positional encoding ( maybe not required because we already got the sequence embedding through a transformer ? )
-        self.encoder_pos_embedder = PositionalEncoding(d_model=1024)
+        self.encoder_pos_embedder = PositionalEncoding(d_model=input_dim)
         # 3. embedding tensor to encoding
         # self.transformer = nn.Transformer(d_model=input_dim, nhead=num_heads, num_encoder_layers=3, num_decoder_layers=3, dim_feedforward=2048)
         self.decoder_layer = nn.TransformerDecoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=2048)
-        self.decoder = nn.TransformerDecoder(decoder_layer=self.decoder_layer, num_layers=3)
+        self.decoder = nn.TransformerDecoder(decoder_layer=self.decoder_layer, num_layers=6)
 
         self.classifier = nn.Sequential(nn.Linear(in_features=input_dim, out_features=3),
                                         nn.Sigmoid())

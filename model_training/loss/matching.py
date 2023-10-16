@@ -67,7 +67,7 @@ class HungarianMatcher(nn.Module):
         #cost_class = - (((tgt_prob[None, :]) * (out_prob.clamp(min=1e-8).log()[:, None])) + (((1 - tgt_prob)[None, :]) * ((1 - out_prob).clamp(min=1e-8).log())[:, None]))
         cost_class = torch.zeros(size=(out_bbox.shape[0], tgt_bbox.shape[0]), dtype=tgt_prob.dtype, device=tgt_prob.device)
         cost_class[:, ~tgt_empty_object_mask] = -out_prob[:, None]
-        cost_class[:, tgt_empty_object_mask] = 0.0
+        cost_class[:, tgt_empty_object_mask] = 1.0
         # Account for class imbalance
         # TODO other than 10
         cost_class[:, tgt_empty_object_mask] /= 10

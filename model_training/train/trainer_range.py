@@ -20,11 +20,10 @@ class TrainerRange:
             self,
             train_loader: DataLoader,
             val_loader: DataLoader,
-            sequence_embedder: Callable = lambda x: x,
             weighted_random_sampler: bool = False
     ):
         self.train_loader, self.val_loader = train_loader, val_loader
-        self.sequence_embedder: Callable = sequence_embedder
+        self.sequence_embedder: Callable = None
 
         # If True uses oversampling instead of class weighting to compensate for unbalanced dataset
         self.weighted_random_sampler = weighted_random_sampler
@@ -106,7 +105,7 @@ class TrainerRange:
 
         model.train()
         for sequences, labels in tqdm_training_batch:
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
             # debug
             sequences_orig, labels_orig = sequences, labels
 
@@ -206,7 +205,7 @@ class TrainerRange:
         model.eval()
         tqdm_val_batch = tqdm(self.val_loader, "Validation Batch")
         for sequences, labels in tqdm_val_batch:
-            torch.cuda.empty_cache()
+            # torch.cuda.empty_cache()
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
             labels = [label.to(device) for label in labels]
@@ -266,8 +265,6 @@ class TrainerRange:
             FN = torch.numel(correct_preds_positive) - TP
             TN = correct_preds_negative.sum().item()
             FP = torch.numel(correct_preds_negative) - TN
-
-
 
 
         accuracy = (TP + TN) / (TP + TN + FP + FN)

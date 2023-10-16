@@ -37,6 +37,7 @@ class ProtTransEmbedder:
 
     def to(self, device):
         self.device = device
+        return self
 
 
 

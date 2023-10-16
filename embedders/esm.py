@@ -40,5 +40,6 @@ class ESM2Embedder:
 
 
     def to(self, device):
-        self.model.to(device)
+        self.model = self.model.to(device)
         self.device = device
+        return self

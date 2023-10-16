@@ -14,12 +14,8 @@ from torch.utils.data import DataLoader, random_split, Subset, WeightedRandomSam
 
 from dataset_embedding_cacher.embedding_cacher import EmbeddingCacher
 from model_training import config
-from model_training.dataset.cc_prediction_dataset import CCPredictionDataset
-from model_training.dataset.cc_prediction_dataset_force_residue import CCPredictionDatasetForceResidue
-from model_training.dataset.cc_prediction_dataset_per_residue import CCPredictionDatasetPerResidue
 from model_training.dataset.cc_prediction_dataset_range import CCPredictionDatasetRange
 from model_training.dataset.collator import raw_collator
-from model_training.sampler.gumbel_max import GumbelMaxWeightedRandomSampler
 from model_training.train.trainer import Trainer
 from model_training.train.trainer_range import TrainerRange
 from model_training.visualization.visualize_training_results import visualize_training_results
@@ -42,8 +38,8 @@ def run_training(
         embedder_class_path,
         model_class_path,
         max_seq_len: int,
-        k_fold_cross_validation: Optional[int] = None,
-        weighted_random_sampler: bool = False,
+        k_fold_cross_validation: Optional[int],
+        weighted_random_sampler: bool,
         **kwargs
 ):
     generator = torch.Generator().manual_seed(42)
@@ -55,27 +51,19 @@ def run_training(
         f"Running Config: '{num_epochs}' Epochs, '{batch_size}' batch size, max sequence length:{max_seq_len}"
     )
 
-
+    #
+    # 1.
+    #
     print("Initializing Embedder")
     # Clear GPU cache
     try:
-        print(f"Using Device: {torch.cuda.get_device_name(config.Config.device)}")
-        torch.cuda.empty_cache()
-        memory_stats = torch.cuda.memory_stats()
-        total_memory = torch.cuda.get_device_properties(0).total_memory
-        available_memory = total_memory - memory_stats["allocated_bytes.all.current"]
-        print(f"GPU Total Mem: {total_memory / (1024 * 1024 * 1024)} GB, Usable: {available_memory / (1024 * 1024 * 1024)} GB ")
+        print_gpu_stats()
     except:
         pass
 
-    embedder_class = locate(embedder_class_path)
-    if embedder_class is None:
-        raise Exception(f"Couldn't load embedder '{embedder_class_path}'")
-
-
+    embedder_class = load_class(embedder_class_path)
     embedder = embedder_class()
-    embedder.to(config.Config.device )
-    embedder_type = embedder.__class__.__name__
+    embedder.to(config.Config.device)
     print(type(embedder))
 
     if dataset_cache is not None:
@@ -83,35 +71,26 @@ def run_training(
         # Use cacher as wrapper for embedder if cache is specified
         embedder = cacher
 
+    #
+    # 2.
+    #
     print("Initializing Model")
-    # Type == Class
-    model_class: Optional[Type] = locate(model_class_path)
-    if model_class is None:
-        raise Exception(f"Couldn't load model '{model_class_path.split('.')[-1]}'")
+    model_class: Optional[Type] = load_class(model_class_path)
 
     # number of channels embedder gives
     # pass as input to model constructor if possible
     in_channels = embedder.embed('AAA')[0].shape[-1]
     try:
-        model = model_class(in_channels)
+        model = model_class(in_channels).to(config.Config.device)
     except:
-        model = model_class()
-
-    model_type = model.__class__.__name__
+        model = model_class().to(config.Config.device)
     print(type(model))
-    model.to(config.Config.device)
 
 
     print("Loading Datasets...")
-    # CCPredictionDatasetPerResidue: ("uniprot_id", "residue_idx", "embedding", "label") header
-    # CCPredictionDataset: ("uniprot_id","sequence","label") header
-    dataset_class = get_dataset_class(dataset_path)
 
 
-
-
-
-    train_dataset = dataset_class(
+    train_dataset = CCPredictionDatasetRange(
         csv_file_path=dataset_path,
         id_sequence_label_idx=0,
         max_seq_len=max_seq_len,
@@ -120,7 +99,7 @@ def run_training(
     )
 
     if dataset_validation_path:
-        val_dataset = get_dataset_class(dataset_validation_path)(
+        val_dataset = CCPredictionDatasetRange(
             csv_file_path=dataset_validation_path,
             id_sequence_label_idx=0,
             max_seq_len=max_seq_len,
@@ -137,7 +116,6 @@ def run_training(
                      train_dataset=train_dataset,
                      val_dataset=val_dataset,
                      embedder=embedder, generator=generator, model=model,
-                     model_type=model_type,
                      num_epochs=num_epochs, weighted_random_sampler=weighted_random_sampler)
     else:
         print(f"Starting K-Fold Training (K = {k_fold_cross_validation}")
@@ -146,22 +124,53 @@ def run_training(
                     val_dataset=val_dataset,
                     k_fold_cross_validation=k_fold_cross_validation,
                     embedder=embedder,
-                    generator=generator,
-                    max_seq_len=max_seq_len,
                     model=model,
-                    model_type=model_type,
                     num_epochs=num_epochs, weighted_random_sampler=weighted_random_sampler)
 
 
-def get_dataset_class(dataset_path):
-    return CCPredictionDatasetRange
+def load_class(class_path) -> Type:
+    embedder_class = locate(class_path)
+    if embedder_class is None:
+        raise Exception(f"Couldn't load class '{class_path}'")
+    return embedder_class
+
+
+def print_gpu_stats():
+    print(f"Using Device: {torch.cuda.get_device_name(config.Config.device)}")
+    torch.cuda.empty_cache()
+    memory_stats = torch.cuda.memory_stats()
+    total_memory = torch.cuda.get_device_properties(0).total_memory
+    available_memory = total_memory - memory_stats["allocated_bytes.all.current"]
+    print(
+        f"GPU Total Mem: {total_memory / (1024 * 1024 * 1024)} GB, Usable: {available_memory / (1024 * 1024 * 1024)} GB ")
+
+def get_weighted_train_sampler(train_dataset):
+    train_weights = []
+
+    for seq, label in train_dataset:
+        pos_seq = sum(bbox[1] for bbox in label)
+        n_seq = 1.0 - pos_seq
+
+        weight = pos_seq * np.log(max(train_dataset.pos_rate, 1e-8)) + n_seq * np.log(max(1 - train_dataset.pos_rate, 1e-8))
+        weight = np.exp(weight)
+
+        train_weights.append(weight)
+
+
+
+    train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_dataset), replacement=True)
+    return train_sampler
 
 
 def train_normal(batch_size,
-                 train_dataset: Union[CCPredictionDataset, CCPredictionDatasetPerResidue],
-                 val_dataset: Optional[Union[CCPredictionDataset, CCPredictionDatasetPerResidue]],
-                 embedder, generator, model, model_type,
+                 train_dataset: CCPredictionDatasetRange,
+                 val_dataset: Optional[CCPredictionDatasetRange],
+                 embedder, generator, model,
                  num_epochs, weighted_random_sampler: bool):
+
+    model_type = model.__class__.__name__
+
+    # do 7:3 train val split if separate val dataset not specified
     if val_dataset is None:
         train_dataset_type = type(train_dataset)
         train_dataset, val_dataset = random_split(train_dataset, [floor(0.7 * len(train_dataset)), ceil(0.3 * len(train_dataset))],
@@ -176,15 +185,14 @@ def train_normal(batch_size,
     train_sampler, val_sampler = RandomSampler(train_dataset), RandomSampler(val_dataset)
     if weighted_random_sampler:
         train_sampler = get_weighted_train_sampler(train_dataset)
-        #
         # Don't use oversampling for validation, use as is!
         # ( Would lead to false validation statitics )
-        #val_weights = [val_dataset.pos_rate if label < 1 else 1.0 - val_dataset.pos_rate for label in val_dataset.labels]
-        #val_sampler = WeightedRandomSampler(weights=val_weights, num_samples=len(val_dataset), replacement=True)
 
-    train_dataloader, val_dataloader = DataLoader(
+
+    train_dataloader= DataLoader(
         train_dataset, batch_size=batch_size, shuffle=False, collate_fn=raw_collator, sampler=train_sampler, drop_last=True
-    ), DataLoader(
+    )
+    val_dataloader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False, collate_fn=raw_collator, sampler=val_sampler, drop_last=True
     )
     trainer = TrainerRange(
@@ -212,28 +220,12 @@ def train_normal(batch_size,
     visualize_training_results(results, training_results_path + "/result")
 
 
-def get_weighted_train_sampler(train_dataset):
-    train_weights = []
-
-    for seq, label in train_dataset:
-        pos_seq = sum(bbox[1] for bbox in label)
-        n_seq = 1.0 - pos_seq
-
-        weight = pos_seq * np.log(max(train_dataset.pos_rate, 1e-8)) + n_seq * np.log(max(1 - train_dataset.pos_rate, 1e-8))
-        weight = np.exp(weight)
-
-        train_weights.append(weight)
-
-
-
-    train_sampler = WeightedRandomSampler(weights=train_weights, num_samples=len(train_dataset), replacement=True)
-    return train_sampler
 
 
 def train_kfold(batch_size: int,
-                train_dataset: Union[CCPredictionDataset, CCPredictionDatasetPerResidue],
-                val_dataset: Optional[Union[CCPredictionDataset, CCPredictionDatasetPerResidue]],
-                k_fold_cross_validation: int, embedder: Callable, generator, max_seq_len: int,
+                train_dataset:CCPredictionDatasetRange,
+                val_dataset: Optional[CCPredictionDatasetRange],
+                k_fold_cross_validation: int, embedder: Callable,
                 model: torch.nn.Module, model_type: str,
                     num_epochs: int,
                 weighted_random_sampler: bool):
@@ -285,9 +277,10 @@ def train_kfold(batch_size: int,
                                                      collate_fn=raw_collator,
                                                      drop_last=True)
 
-        trainer = Trainer(
+        trainer = TrainerRange(
             train_loader=train_dataloader,
             val_loader=val_dataloader,
+            weighted_random_sampler=False
         )
 
 
@@ -337,6 +330,10 @@ if __name__ == "__main__":
 
     parser.add_argument("-msl", "--max_sequence_length", default=sys.maxsize)
 
+    # If active use k-fold cross validation ( k value specifies how many folds to use)
+    parser.add_argument("-k", "--k_fold_cross_validation", default=None)
+
+    parser.add_argument('-wrs', "--weighted_random_sampler", default=False, action='store_true')
 
 
     args = parser.parse_args()
@@ -361,6 +358,8 @@ if __name__ == "__main__":
         embedder_class_path=embedder,
         model_class_path=model,
         max_seq_len=int(args.max_sequence_length),
+        k_fold_cross_validation=int(args.k_fold_cross_validation) if args.k_fold_cross_validation else None,
+        weighted_random_sampler=args.weighted_random_sampler
     )
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
