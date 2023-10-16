@@ -2,6 +2,7 @@ import math
 from typing import Callable
 
 import torch
+import torchvision
 from torch import nn
 from torch import functional as F
 
@@ -28,11 +29,11 @@ class Transformer(nn.Module):
         self.classifier = nn.Sequential(nn.Linear(in_features=input_dim, out_features=3),
                                         nn.Sigmoid())
 
-        self.output_query = nn.Parameter(torch.rand(100, input_dim))
+        self.output_query = nn.Parameter(torch.rand(20, input_dim))
 
     def forward(self, x, padding_mask = None):
         # TODO Parallel processing
-        output = torch.stack([self.decoder(memory=x[i], tgt=self.output_query) for i in range(len(x))])
+        output = torch.stack([self.decoder(memory=torchvision.transforms.functional.resize(x[i], [1024]), tgt=self.output_query) for i in range(len(x))])
         output = self.classifier(output)
 
 
@@ -64,7 +65,6 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer('pe', pe)
 
     def forward(self, x):

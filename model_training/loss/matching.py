@@ -2,7 +2,7 @@ import torch
 from scipy.optimize import linear_sum_assignment
 from torch import nn
 
-from model_training.loss.util import get_iou_generalized
+from model_training.loss.util import get_iou_batch, get_giou_batch
 from torch.nn import BCELoss
 
 
@@ -63,13 +63,13 @@ class HungarianMatcher(nn.Module):
         # but approximate it in 1 - proba[target class].
         # The 1 is a constant that doesn't change the matching, it can be ommitted.
         cost_class = BCELoss(reduction='none')(out_prob, tgt_prob)
-        cost_class = cost_class.expand(out_prob.shape[0], tgt_prob.shape[0]).transpose(0, 1)
+        # cost_class = cost_class.expand(out_prob.shape[0], tgt_prob.shape[0]).transpose(0, 1)
 
         # Compute the L1 cost between boxes
         cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)
 
         # Compute the giou cost betwen boxes
-        cost_giou = -get_iou_generalized(out_bbox, tgt_bbox)
+        cost_giou = -get_giou_batch(out_bbox, tgt_bbox)
 
         # Final cost matrix
         C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou

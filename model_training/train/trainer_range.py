@@ -29,8 +29,11 @@ class TrainerRange:
         # If True uses oversampling instead of class weighting to compensate for unbalanced dataset
         self.weighted_random_sampler = weighted_random_sampler
 
-        # Transform Sequence based on whether given dataset is sequence_residue/row or sequence/row
+
         self.transform_train_sequences = lambda sequences: [self.sequence_embedder.embed(sequence) for sequence in
+                                                            sequences]
+
+        self.transform_val_sequences = lambda sequences: [self.sequence_embedder.embed(sequence) for sequence in
                                                             sequences]
 
     def get_dataset_type(self, dataset):
@@ -150,7 +153,32 @@ class TrainerRange:
             # update weights
             optimizer.step()
 
+            predicted_labels, targets_labels = self.get_non_range_labels(labels, preds, sequences)
 
+            train_batch_stats = self.get_batch_stats(
+                preds=predicted_labels, labels=targets_labels
+            )
+
+
+            train_batch_stats['loss'] = loss.item()
+            try:
+                self.previous_training_sensitivity = self.previous_training_sensitivity * (1 - 0.0025) + float(
+                    train_batch_stats['sensitivity']) * 0.0025
+            except:
+                pass
+
+            for key, val in train_batch_stats.items():
+                if val > -1:
+                    train_epoch_stats.setdefault(key, []).append(val)
+
+            tqdm_training_batch.set_description(
+                f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
+
+        return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in
+                train_epoch_stats}
+
+    def get_non_range_labels(self, labels, preds, sequences):
+        with torch.no_grad():
             predicted_labels = [torch.zeros_like(seq[:, 0], dtype=torch.bool) for seq in sequences]
             targets_labels = [x.clone() for x in predicted_labels]
             for batch_idx, seq in enumerate(sequences):
@@ -168,27 +196,7 @@ class TrainerRange:
                     width = round(seq_len * width.item())
 
                     targets_labels[batch_idx][center - width // 2:center + width // 2 + 1] = True
-
-
-            train_batch_stats = self.get_batch_stats(
-                preds=predicted_labels, labels=targets_labels
-            )
-            train_batch_stats['loss'] = loss.item()
-            try:
-                self.previous_training_sensitivity = self.previous_training_sensitivity * (1 - 0.0025) + float(
-                    train_batch_stats['sensitivity']) * 0.0025
-            except:
-                pass
-
-            for key, val in train_batch_stats.items():
-                if val > -1:
-                    train_epoch_stats.setdefault(key, []).append(val)
-
-            tqdm_training_batch.set_description(
-                f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
-
-        return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in
-                train_epoch_stats}
+        return predicted_labels, targets_labels
 
     def set_current_batch_padding_mask(self, labels, seq_lens):
         self.label_padding_mask = torch.empty(
@@ -223,13 +231,15 @@ class TrainerRange:
             sequences = [sequence.to(device) for sequence in sequences]
 
             with torch.no_grad():
-                preds = model(sequences, self.current_batch_padding_mask)
+                preds = model(sequences)
 
                 #                loss = criterion(preds, labels).item()
                 loss = self._get_loss(labels=labels, preds=preds, validation=True).item()
 
+
+                predicted_labels, targets_labels = self.get_non_range_labels(labels, preds, sequences)
                 val_batch_stats = self.get_batch_stats(
-                    labels_reordered=labels, preds=preds
+                    preds=predicted_labels, labels=targets_labels
                 )
                 val_batch_stats['loss'] = loss
                 try:
@@ -249,7 +259,7 @@ class TrainerRange:
         return {key: np.mean(val_epoch_stats[key]) if len(val_epoch_stats[key]) > 0 else 0.0 for key in val_epoch_stats}
 
     def _get_loss(self, labels: List[torch.Tensor], preds: torch.Tensor, validation: bool):
-        dataset = self.train_loader.dataset if not validation else self.val_loader
+        dataset = self.train_loader.dataset if not validation else self.val_loader.dataset
 
         return DetrLoss(pos_rate=dataset.pos_rate)(preds=preds, targets=labels)
 
