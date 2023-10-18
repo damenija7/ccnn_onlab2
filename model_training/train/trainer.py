@@ -148,7 +148,7 @@ class Trainer:
             optimizer.zero_grad()
 
             # get predictions of model
-            preds = model(sequences, padding_mask=self.current_batch_padding_mask)
+            preds = model(sequences)
 
             if torch.isnan(preds).any():
                 raise Exception("Model generated prediction contains nan")
@@ -214,7 +214,7 @@ class Trainer:
             ).to(device)
 
             with torch.no_grad():
-                preds = model(sequences, self.current_batch_padding_mask)
+                preds = model(sequences)
 
 #                loss = criterion(preds, labels).item()
                 loss = self._get_loss(labels=labels, preds=preds, validation=True).item()
@@ -233,7 +233,7 @@ class Trainer:
                         val_epoch_stats.setdefault(key, []).append(val)
 
 
-                tqdm_val_batch.set_description(f'Validation Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in val_batch_stats.items())}')
+                tqdm_val_batch.set_description(f'Validation Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val >= 0 else "NONE") for metric_name, metric_val in val_batch_stats.items())}')
 
         return {key: np.mean(val_epoch_stats[key]) if len(val_epoch_stats[key]) > 0 else 0.0 for key in val_epoch_stats}
 
@@ -291,6 +291,9 @@ class Trainer:
 
             correct_preds = preds_round == labels
 
+            i = ((preds_round * labels) > 0).sum().item()
+            u = ((preds_round + labels) > 0).sum().item()
+            iou = i / u if u > 0.0 else -1
 
 
             correct_preds_positive = correct_preds[labels > 0]
@@ -310,5 +313,6 @@ class Trainer:
             'accuracy': accuracy,
             'sensitivity': sensitivity,
             'precision': precision,
-            'F1': F1
+            'F1': F1,
+            'iou': iou
         }

@@ -14,27 +14,38 @@ class ConvRange(nn.Module):
 
         in_features = input_dim
 
-        self.conv = nn.Sequential(
-            nn.Conv1d(in_channels=in_features, out_channels=in_features//2, kernel_size=3, padding=3//2),
-            nn.ReLU(),
+        get_cnn_block = lambda in_channels, out_channel :nn.Sequential(
+            nn.Conv1d(in_channels=in_channels, out_channels=out_channel, kernel_size=3, padding=3 // 2),
+            nn.BatchNorm1d(num_features=out_channel),
+            nn.ReLU())
 
-            nn.Conv1d(in_channels=in_features//2, out_channels=in_features//2, kernel_size=3, padding=3//2),
-            nn.ReLU(),
-            nn.AvgPool1d(kernel_size=16),
+        self.conv1 = get_cnn_block(in_features, in_features//2)
+        self.conv2 = get_cnn_block(in_features//2, in_features//2)
 
+        self.conv3 = nn.Sequential(get_cnn_block(in_features//2, in_features//4),
+                                   nn.AvgPool1d(kernel_size=4),
+                                   get_cnn_block(in_features//4, 3))
 
-
-            nn.Conv1d(in_channels=in_features//2, out_channels=3, kernel_size=3, padding=3//2)
-        )
 
         self.classifier = torch.nn.Sigmoid()
 
     def forward(self, x):
-        x_resized = [
+        x_resized = torch.stack([
             torch.nn.functional.interpolate(x[i].permute(1, 0).unsqueeze(-2), size=[1024]).squeeze(dim=-2).permute(1, 0)
-            for i in range(len(x))]
+            for i in range(len(x))], dim=0)
 
-        return self.classifier(torch.stack([self.conv(x_resized[i].permute(-1, -2)).permute(-1, -2) for i in range(len(x))]))
+        x_output_orig = x_resized.permute(0, -1, -2)
+        x_output = x_output_orig
+
+        x_output = self.conv1(x_output)
+        x_output = x_output + self.conv2(x_output)
+        x_output = self.conv3(x_output)
+
+        x_output = x_output.permute(0, -1, -2)
+
+        x_output = self.classifier(x_output)
+
+        return self.classifier(x_output)
 
 
 
@@ -49,23 +60,22 @@ class Transformer(nn.Module):
 #        if not sequence_embedder:
 #            raise Exception("Must specify a sequence embedder")
 
-        # 2. embedding tensor add positional encoding ( maybe not required because we already got the sequence embedding through a transformer ? )
-        self.encoder_pos_embedder = PositionalEncoding(d_model=input_dim)
+
         # 3. embedding tensor to encoding
         # self.transformer = nn.Transformer(d_model=input_dim, nhead=num_heads, num_encoder_layers=3, num_decoder_layers=3, dim_feedforward=2048)
-        self.decoder_layer = nn.TransformerDecoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=2048)
+        self.decoder_layer = nn.TransformerDecoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=4096, batch_first=True)
         self.decoder = nn.TransformerDecoder(decoder_layer=self.decoder_layer, num_layers=6)
 
         self.classifier = nn.Sequential(nn.Linear(in_features=input_dim, out_features=3),
                                         nn.Sigmoid())
 
-        self.output_query = nn.Parameter(torch.rand(20, input_dim))
+        self.output_query =  nn.Embedding(20, input_dim)
 
     def forward(self, x, padding_mask = None):
         # TODO Parallel processing
         # x = [torch.nn.functional.interpolate(x[i].permute(1, 0).unsqueeze(-2), size=[1024]).squeeze(dim=-2).permute(1, 0) for i in range(len(x))]
 
-        output = torch.stack([self.decoder(memory=x[i], tgt=self.output_query) for i in range(len(x))])
+        output = torch.stack([self.decoder(memory=x[i], tgt=self.output_query.weight) for i in range(len(x))])
         output = self.classifier(output)
 
 

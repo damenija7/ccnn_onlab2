@@ -76,13 +76,15 @@ class DetrLoss(_Loss):
         pred_probs = preds[::, -1]
         target_probs = targets_padded_reordered[::, -1]
 
+
+
         cost_class = - (
-            (1 - pos_target_rate_per_batch) * target_probs * pred_probs.clamp(min=1e-8).log() +
-                        pos_target_rate_per_batch * (1 - target_probs) * (1 - pred_probs).clamp(min=1e-8).log()
+            (1) * target_probs * pred_probs.clamp(min=1e-8).log() +
+                        1/10 * (1 - target_probs) * (1 - pred_probs).clamp(min=1e-8).log()
                         )
 
 
-        return cost_class.sum()
+        return cost_class.mean()
         #return BCELoss(weight=weights)(preds[:, :, -1], targets_padded_reordered[:, :, -1])
 
 

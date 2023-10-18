@@ -308,6 +308,9 @@ def train_kfold(batch_size: int,
         os.makedirs(training_results_path)
     # Write training parameters
     with open(f"{training_results_path}/parameters.json", "w") as f:
+        parameters = vars(args)
+        parameters['model_num_parameters'] = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
         json.dump(vars(args), f)
 
 
