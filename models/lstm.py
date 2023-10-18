@@ -45,35 +45,48 @@ class Transformer(nn.Module):
         self.classifier = nn.Sequential(nn.Linear(in_features=input_dim, out_features=output_dim),
                                         nn.Sigmoid())
 
-        self.start_query = nn.Parameter(torch.rand(1, input_dim))
-        self.one_embedding = nn.Parameter(torch.rand(1, input_dim))
-        self.zero_embedding = nn.Parameter(torch.rand(1, input_dim))
+        self.start_query = nn.Embedding(1, input_dim)
+        self.one_embedding = nn.Embedding(1, input_dim)
+        self.zero_embedding = nn.Embedding(1, input_dim)
 
     def forward(self, x, label = None):
         # TODO Parallel processing
 
-        current_decoder_input = [self.get_output_recurrent_mode(x=x[i], starting_query=self.start_query, label=label) for i in range(x.shape[0])]
-        #current_decoder_input = [self.get_output(x=x[i]) for i in range(x.shape[0])]
+        if self.training:
+            current_decoder_input = [self.get_output(x=x[i], label=label) for i in range(x.shape[0])]
+        else:(
+            current_decoder_input) = [self.get_output_recurrent_mode(x=x[i], starting_query=self.start_query.weight, label=label) for i in range(x.shape[0])]
+
         current_decoder_input = torch.nn.utils.rnn.pad_sequence(current_decoder_input, batch_first=True)
         return current_decoder_input
 
-    def get_output(self, x:torch.Tensor):
-        query_mask = torch.ones((x.shape[0] + 1, x.shape[0]), dtype=torch.bool, device=x.device).tril()
+    def get_output(self, x:torch.Tensor, label):
+        tgt_mask = torch.ones((x.shape[0] + 1, x.shape[0] + 1), dtype=x.dtype, device=x.device).tril()
+        tgt = self.get_teacher_forcing_input(label)
 
-        return self.classifier(self.decoder(memory=x, tgt=self.start_query.expand(x.shape[0], self.input_dim)))
+        res = self.decoder(memory=x, tgt=tgt)[1:]
+        assert not torch.isnan(res).any()
+        res = self.classifier(res)
+        return res
+
+    def get_teacher_forcing_input(self, label):
+        return torch.cat(
+            [self.start_query.weight] + [self.one_embedding.weight if l > 0.5 else self.zero_embedding.weight for l in
+                                         label.squeeze()])
 
     def get_output_recurrent_mode(self, x: torch.Tensor, starting_query: torch.Tensor, label: Optional[torch.Tensor] = None):
         current_decoder_input = torch.zeros(size=(x.shape[0] + 1, self.input_dim), dtype=x.dtype, device=x.device)
         current_decoder_input_teacher_forcing = current_decoder_input.clone()
-        query_mask = torch.ones((x.shape[0] + 1, x.shape[0]), dtype=torch.bool, device=x.device).tril()
+        query_mask = torch.ones((x.shape[0] + 1, x.shape[0]), dtype=x.dtype, device=x.device).tril()
 
-        current_decoder_input[0] = current_decoder_input_teacher_forcing[0] = self.start_query
+        current_decoder_input[0] = current_decoder_input_teacher_forcing[0] = self.start_query.weight
 
         if label is not None:
-            current_decoder_input_teacher_forcing[1:] = label
+            label = label.squeeze()
+            current_decoder_input_teacher_forcing = self.get_teacher_forcing_input(label)
 
         for i in range(x.shape[0]):
-            query_mask[i] = True
+            query_mask[i] = 1.0
 
             current_input = current_decoder_input_teacher_forcing[:1+i]
             current_input_mask = query_mask[:1+i, :1+i]
@@ -85,8 +98,6 @@ class Transformer(nn.Module):
 
             if label is None:
                 current_decoder_input_teacher_forcing[i + 1] = self.one_embedding if current_output.round().item() > 0.5 else self.zero_embedding
-            else:
-                current_decoder_input_teacher_forcing[i + 1] = self.one_embedding if label[i].item() > 0.5 else self.zero_embedding
 
 
 

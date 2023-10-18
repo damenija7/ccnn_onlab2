@@ -148,7 +148,7 @@ class Trainer:
             optimizer.zero_grad()
 
             # get predictions of model
-            preds = model(sequences)
+            preds = model(sequences, labels)
 
             if torch.isnan(preds).any():
                 raise Exception("Model generated prediction contains nan")
@@ -275,8 +275,9 @@ class Trainer:
                 weights[labels > 0] = 1 - pos_rate
                 return nn.BCELoss(weight=weights)(preds, labels)
 
+
         # When compensate for unbalanced dataset property by oversampling (instead of loss function)
-        return nn.BCELoss()(preds, labels)
+        return nn.BCELoss(reduction='sum')(preds, labels)
 
     def get_batch_stats(self, preds, labels) -> Dict[str, float]:
         with torch.no_grad():
