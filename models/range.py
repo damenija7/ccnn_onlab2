@@ -1,11 +1,7 @@
-import math
 from typing import Callable
 
-import numpy as np
 import torch
-import torchvision
 from torch import nn
-from torch import functional as F
 
 
 class ConvRange(nn.Module):
@@ -73,55 +69,23 @@ class Transformer(nn.Module):
 
     def forward(self, x, padding_mask = None):
         # TODO Parallel processing
-        # x = [torch.nn.functional.interpolate(x[i].permute(1, 0).unsqueeze(-2), size=[1024]).squeeze(dim=-2).permute(1, 0) for i in range(len(x))]
+        from torch.nn.utils.rnn import pad_sequence, unpad_sequence
+        x_padded: torch.Tensor = pad_sequence(x, batch_first=True, padding_value=-float('inf'))
+        # (batch_siz, seq)
+        padding_mask = (x_padded[:, :, 0].squeeze(dim=-1) > -float('inf')).float()
+        x_padded = torch.nan_to_num(x_padded, neginf=0.0)
 
-        output = torch.stack([self.decoder(memory=x[i], tgt=self.output_query.weight) for i in range(len(x))])
+        memory_mask = torch.cat([padding_mask.unsqueeze(dim=-2)] * self.output_query.weight.shape[0], dim=1)
+
+        tgt = self.output_query.weight.expand(x_padded.shape[0], *self.output_query.weight.shape)
+
+        # account for multiheadedness
+        memory_mask = torch.cat([memory_mask] * 8)
+
+        output = self.decoder(memory=x_padded, memory_mask=memory_mask, tgt=tgt)
         output = self.classifier(output)
 
-
         return output
-
-
-class PositionalEncoding(nn.Module):
-    r"""Inject some information about the relative or absolute position of the tokens in the sequence.
-        The positional encodings have the same dimension as the embeddings, so that the two can be summed.
-        Here, we use sine and cosine functions of different frequencies.
-    .. math:
-        \text{PosEncoder}(pos, 2i) = sin(pos/10000^(2i/d_model))
-        \text{PosEncoder}(pos, 2i+1) = cos(pos/10000^(2i/d_model))
-        \text{where pos is the word position and i is the embed idx)
-    Args:
-        d_model: the embed dim (required).
-        dropout: the dropout value (default=0.1).
-        max_len: the max. length of the incoming sequence (default=5000).
-    Examples:
-        >>> pos_encoder = PositionalEncoding(d_model)
-    """
-
-    def __init__(self, d_model, dropout=0.1, max_len=5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        r"""Inputs of forward function
-        Args:
-            x: the sequence fed to the positional encoder model (required).
-        Shape:
-            x: [sequence length, batch size, embed dim]
-            output: [sequence length, batch size, embed dim]
-        Examples:
-            >>> output = pos_encoder(x)
-        """
-
-        x = x + self.pe[:x.size(0), :]
-        return self.dropout(x)
 
 
 

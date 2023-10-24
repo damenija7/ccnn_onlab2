@@ -78,6 +78,7 @@ class Trainer:
 
             tqdm_training_batch = tqdm(self.train_loader, "Training Batch")
 
+
             train_batch_stats = self.train_epoch(
                 model, optimizer, tqdm_training_batch
             )
@@ -92,7 +93,6 @@ class Trainer:
             #
             # Validation of Current Epoch
             #
-
             val_batch_stats = self.validate_epoch(model)
 
             # save model if validation sensitivity is such that it is considered the best predictor
@@ -150,11 +150,17 @@ class Trainer:
             # get predictions of model
             preds = model(sequences, labels)
 
+            if isinstance(preds, tuple):
+                preds, loss = preds
+                loss = loss[self.current_batch_padding_mask].mean()
+            else:
+                loss = self._get_loss(labels=labels, preds=preds, validation=False)
+
+
             if torch.isnan(preds).any():
                 raise Exception("Model generated prediction contains nan")
 
-            # get loss
-            loss = self._get_loss(labels=labels, preds=preds, validation=False)
+
 
             # get gradients
             loss.backward()
@@ -164,13 +170,9 @@ class Trainer:
 
 
             train_batch_stats = self.get_batch_stats(
-                labels=labels, preds=preds
+                labels=labels, preds=preds, loss=loss
             )
-            train_batch_stats['loss'] = loss.item()
-            try:
-                self.previous_training_sensitivity = self.previous_training_sensitivity * (1 - 0.0025) + float(train_batch_stats['sensitivity']) * 0.0025
-            except:
-                pass
+
 
             for key, val in train_batch_stats.items():
                 if val > -1:
@@ -178,7 +180,7 @@ class Trainer:
 
 
 
-            tqdm_training_batch.set_description(f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
+            tqdm_training_batch.set_description(f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val != -1 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
 
         return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in train_epoch_stats}
 
@@ -214,19 +216,21 @@ class Trainer:
             ).to(device)
 
             with torch.no_grad():
-                preds = model(sequences)
+                # get predictions of model
+                preds = model(sequences, labels)
 
-#                loss = criterion(preds, labels).item()
-                loss = self._get_loss(labels=labels, preds=preds, validation=True).item()
+                if isinstance(preds, tuple):
+                    preds, loss = preds
+                    loss = loss[self.current_batch_padding_mask].mean()
+                else:
+                    loss = self._get_loss(labels=labels, preds=preds, validation=True)
+
+                if torch.isnan(preds).any():
+                    raise Exception("Model generated prediction contains nan")
 
                 val_batch_stats = self.get_batch_stats(
-                    labels=labels, preds=preds
+                    labels=labels, preds=preds, loss=loss
                 )
-                val_batch_stats['loss'] = loss
-                try:
-                    self.previous_validation_sensitivity = self.previous_validation_sensitivity * (1 - 0.001) + float(val_batch_stats['sensitivity']) * 0.001 if not type(val_batch_stats['sensitivity'], str) else self.previous_validation_sensitivity
-                except:
-                    pass
 
                 for key, val in val_batch_stats.items():
                     if val > -1:
@@ -259,8 +263,8 @@ class Trainer:
         #                                                     alpha=1.0 - (self.val_loader.dataset.pos_rate if validation else self.train_loader.dataset.pos_rate),
         #                                              reduction="mean")
 
-        if len(labels.shape) < 2:
-            labels = torch.unsqueeze(labels, dim=-1)
+
+        labels = torch.squeeze(labels, dim=-1)
 
         # Compensate for unbalanced dataset property by class weighting
         if not self.weighted_random_sampler:
@@ -277,18 +281,14 @@ class Trainer:
 
 
         # When compensate for unbalanced dataset property by oversampling (instead of loss function)
-        return nn.BCELoss(reduction='sum')(preds, labels)
+        return nn.BCELoss(reduction='mean')(preds, labels)
 
-    def get_batch_stats(self, preds, labels) -> Dict[str, float]:
+    def get_batch_stats(self, preds, labels, loss) -> Dict[str, float]:
         with torch.no_grad():
             preds_round = preds.round()
 
-            # TODO multiple channel
-            if len(labels.shape) >= 3:
-                labels = torch.any(labels, dim=-1)
-                preds_round = torch.any(preds_round, dim=-1)
-            else:
-                labels = torch.unsqueeze(labels, dim=-1)
+            labels, preds = labels.unsqueeze(dim=-1), preds.unsqueeze(dim=-1)
+
 
             correct_preds = preds_round == labels
 
@@ -315,5 +315,6 @@ class Trainer:
             'sensitivity': sensitivity,
             'precision': precision,
             'F1': F1,
-            'iou': iou
+            'iou': iou,
+            'loss': loss.item()
         }
