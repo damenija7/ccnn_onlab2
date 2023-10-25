@@ -122,16 +122,21 @@ class TrainerRange:
             optimizer.zero_grad()
 
             # get predictions of model
-            preds = model(sequences)
+            preds = model(sequences, labels)
+
+            if isinstance(preds, tuple):
+                preds, loss = preds
+            else:
+                loss = self._get_loss(labels=labels, preds=preds, validation=False)
 
             if torch.isnan(preds).any():
                 raise Exception("Model generated prediction contains nan")
 
-            # get loss
-            loss = self._get_loss(labels=labels, preds=preds, validation=False)
-
             # get gradients
-            loss.backward()
+            try:
+                loss.backward()
+            except:
+                pass
 
             # update weights
             optimizer.step()
@@ -160,39 +165,6 @@ class TrainerRange:
         return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in
                 train_epoch_stats}
 
-    def get_non_range_labels(self, labels, preds, sequences):
-        with torch.no_grad():
-            predicted_labels = [torch.zeros_like(seq[:, 0], dtype=torch.bool) for seq in sequences]
-            targets_labels = [x.clone() for x in predicted_labels]
-            for batch_idx, seq in enumerate(sequences):
-                seq_len = len(seq)
-
-                for center, width, probability in preds[batch_idx]:
-                    center = round(seq_len * center.item())
-                    width = round(seq_len * width.item())
-
-                    if probability > 0.5:
-                        left, right = max(0, center - width // 2), min(center + width // 2 + 1, seq_len)
-                        predicted_labels[batch_idx][left:right] = True
-
-                for center, width in labels[batch_idx]:
-                    center = round(seq_len * center.item())
-                    width = round(seq_len * width.item())
-
-                    left, right = max(0, center - width // 2), min(center + width // 2 + 1, seq_len)
-
-                    targets_labels[batch_idx][left:right] = True
-        return predicted_labels, targets_labels
-
-    def set_current_batch_padding_mask(self, labels, seq_lens):
-        self.label_padding_mask = torch.empty(
-            size=(len(labels), max(len(label) for label in labels)), dtype=torch.bool, device=labels[0].device)
-
-        for i, label in enumerate(labels):
-            self.label_padding_mask[i, :len(label)] = True
-
-
-
     def validate_epoch(self, model):
         val_epoch_stats = {'loss': [], 'accuracy': [], 'sensitivity': [], 'precision': [], 'F1': []}
 
@@ -219,9 +191,11 @@ class TrainerRange:
             with torch.no_grad():
                 preds = model(sequences)
 
-                #                loss = criterion(preds, labels).item()
-                loss = self._get_loss(labels=labels, preds=preds, validation=True).item()
-
+                if isinstance(preds, tuple):
+                    preds, loss = preds
+                    loss = loss.item()
+                else:
+                    loss = self._get_loss(labels=labels, preds=preds, validation=False).item()
 
                 predicted_labels, targets_labels = self.get_non_range_labels(labels, preds, sequences)
                 val_batch_stats = self.get_batch_stats(
@@ -243,6 +217,45 @@ class TrainerRange:
                     f'Validation Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val > 0 else "NONE") for metric_name, metric_val in val_batch_stats.items())}')
 
         return {key: np.mean(val_epoch_stats[key]) if len(val_epoch_stats[key]) > 0 else 0.0 for key in val_epoch_stats}
+
+    def get_non_range_labels(self, labels, preds, sequences):
+        with torch.no_grad():
+            predicted_labels = [torch.zeros_like(seq[:, 0], dtype=torch.bool) for seq in sequences]
+            targets_labels = [x.clone() for x in predicted_labels]
+            for batch_idx, seq in enumerate(sequences):
+                seq_len = len(seq)
+
+                for center, width, probability in preds[batch_idx]:
+
+                    if probability > 0.5:
+                        left, right = self.get_cc_left_right_indices(center, seq_len, width)
+                        predicted_labels[batch_idx][left:right] = True
+
+                for center, width in labels[batch_idx]:
+                    left, right = self.get_cc_left_right_indices(center, seq_len, width)
+
+                    targets_labels[batch_idx][left:right] = True
+        return predicted_labels, targets_labels
+
+    def get_cc_left_right_indices(self, center, seq_len, width):
+        center = seq_len * center.item()
+        width = seq_len * width.item()
+
+        left = max(int(math.ceil(center - width/2)), 0)
+        right = min(int(math.ceil(center + width / 2)), seq_len)
+
+        return left, right
+
+    def set_current_batch_padding_mask(self, labels, seq_lens):
+        self.label_padding_mask = torch.empty(
+            size=(len(labels), max(len(label) for label in labels)), dtype=torch.bool, device=labels[0].device)
+
+        for i, label in enumerate(labels):
+            self.label_padding_mask[i, :len(label)] = True
+
+
+
+
 
     def _get_loss(self, labels: List[torch.Tensor], preds: torch.Tensor, validation: bool):
         dataset = self.train_loader.dataset if not validation else self.val_loader.dataset

@@ -1,7 +1,10 @@
-from typing import Callable
+from pprint import pprint
+from typing import Callable, Optional
 
 import torch
 from torch import nn
+
+from model_training.loss import DetrLoss
 
 
 class ConvRange(nn.Module):
@@ -53,40 +56,78 @@ class Transformer(nn.Module):
 
         self.input_dim, self.hidden_dim, self.output_dim, self.num_heads = input_dim, hidden_dim, output_dim, num_heads
 
+        self.loss_func = DetrLoss(0.9)
+
 #        if not sequence_embedder:
 #            raise Exception("Must specify a sequence embedder")
 
 
         # 3. embedding tensor to encoding
         # self.transformer = nn.Transformer(d_model=input_dim, nhead=num_heads, num_encoder_layers=3, num_decoder_layers=3, dim_feedforward=2048)
-        self.decoder_layer = nn.TransformerDecoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=4096, batch_first=True)
-        self.decoder = nn.TransformerDecoder(decoder_layer=self.decoder_layer, num_layers=6)
+        self.decoder_layer = nn.TransformerDecoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=1024, batch_first=True)
+        self.decoder = nn.TransformerDecoder(decoder_layer=self.decoder_layer, num_layers=4)
 
-        self.classifier = nn.Sequential(nn.Linear(in_features=input_dim, out_features=3),
-                                        nn.Sigmoid())
+        self.class_embed = nn.Sequential(nn.Linear(input_dim, 1), nn.Sigmoid())
+        self.box_embed = nn.Sequential(nn.Linear(input_dim, input_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(input_dim, input_dim),
+                                       nn.ReLU(),
+                                       nn.Linear(input_dim, 2),
+                                       nn.Sigmoid())
 
         self.output_query =  nn.Embedding(20, input_dim)
 
-    def forward(self, x, padding_mask = None):
+    def forward(self, x, label: Optional = None):
         # TODO Parallel processing
         from torch.nn.utils.rnn import pad_sequence, unpad_sequence
         x_padded: torch.Tensor = pad_sequence(x, batch_first=True, padding_value=-float('inf'))
         # (batch_siz, seq)
-        padding_mask = (x_padded[:, :, 0].squeeze(dim=-1) > -float('inf')).float()
+        padding_mask_bool = x_padded[:, :, 0].squeeze(dim=-1) > -float('inf')
+        padding_mask_float = padding_mask_bool.float()
         x_padded = torch.nan_to_num(x_padded, neginf=0.0)
 
-        memory_mask = torch.cat([padding_mask.unsqueeze(dim=-2)] * self.output_query.weight.shape[0], dim=1)
+        memory_mask = torch.cat([padding_mask_float.unsqueeze(dim=-2)] * self.output_query.weight.shape[0], dim=1)
+
+
 
         tgt = self.output_query.weight.expand(x_padded.shape[0], *self.output_query.weight.shape)
 
         # account for multiheadedness
         memory_mask = torch.cat([memory_mask] * 8)
+        tgt_mask = torch.zeros(dtype=tgt.dtype, device=tgt.device, size=(tgt.shape[0] * 8, tgt.shape[1], tgt.shape[1]))
 
-        output = self.decoder(memory=x_padded, memory_mask=memory_mask, tgt=tgt)
-        output = self.classifier(output)
+        output = self.decoder(memory=x_padded, memory_key_padding_mask=~padding_mask_bool, tgt=tgt)
+        output = torch.cat([self.box_embed(output), self.class_embed(output)], dim=-1)
 
-        return output
+        if label is None:
+            return output
 
+        output = self.get_label_output(label, output)
+
+        loss = self.loss_func(output, label)
+
+
+
+        return output, loss
+
+    def get_label_output(self, label, output):
+        # TODO FOR TESTING PURPOSES
+        label_output = torch.zeros(size=(len(label), max(len(label_i) for label_i in label), output.shape[-1]),
+                                   dtype=output.dtype, device=output.device)
+        for i, label_i in enumerate(label):
+            label_output[i, :len(label_i), :-1] = label_i
+            label_output[i, :len(label_i), -1] = 1.0
+        return label_output
+
+    @property
+    def statistics(self):
+        query_similarity = torch.var(self.output_query.weight, dim=0)
+
+        stat = {
+            "query_similarity": (query_similarity.min().item(), query_similarity.max().item()),
+            # "classifier_similarity": (classifier_similarity.min().item(), classifier_similarity.max().item())
+        }
+        return stat
 
 
 

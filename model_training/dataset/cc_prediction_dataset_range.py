@@ -1,5 +1,6 @@
 import csv
 import textwrap
+from math import ceil
 from typing import Callable
 
 import torch
@@ -77,13 +78,22 @@ class CCPredictionDatasetRange(Dataset):
 
     def get_bounding_box(self, cc_start_idx_incl, cc_end_idx_excl, sequence_length: int):
         center, width = (cc_start_idx_incl + cc_end_idx_excl - 1) / 2, (cc_end_idx_excl - cc_start_idx_incl)
-        return (center / sequence_length, width / sequence_length)
+        center, width = center / sequence_length, width / sequence_length
+        res = (center, width)
+
+        left, right = center * sequence_length - width * sequence_length / 2, center * sequence_length + width * sequence_length / 2
+        left, right = int(ceil(left)), int(ceil(right))
+        assert left == cc_start_idx_incl
+        assert right == cc_end_idx_excl
+
+        return res
 
     def __len__(self):
         return len(self.prot_label_bounding_boxes_list)
 
     def __getitem__(self, index):
         return self.prot_sequence_list[index], self.prot_label_bounding_boxes_list[index]
+
 
 
     @staticmethod

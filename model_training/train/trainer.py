@@ -221,7 +221,7 @@ class Trainer:
 
                 if isinstance(preds, tuple):
                     preds, loss = preds
-                    loss = loss[self.current_batch_padding_mask].mean()
+                    loss = loss[self.current_batch_padding_mask].sum()
                 else:
                     loss = self._get_loss(labels=labels, preds=preds, validation=True)
 

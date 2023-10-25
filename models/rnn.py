@@ -56,8 +56,8 @@ class EmbeddingModel(nn.Module):
         return preds
 
     def get_preds(self, model_output):
-        sim_one = self.get_similarity_single_embedding(model_output, self.model(self.one_embedding.weight)[0])
-        sim_zero = self.get_similarity_single_embedding(model_output, self.model(self.zero_embedding.weight)[0])
+        sim_one = self.get_similarity(model_output, self.model(self.get_label_embedding_repr(model_output, 1)))
+        sim_zero = self.get_similarity(model_output, self.model(self.get_label_embedding_repr(model_output, 0)))
         res = torch.zeros(size=(model_output.shape[0], model_output.shape[1], 1), dtype=model_output.dtype, device=model_output.device)
 
         pos_mask = sim_one > sim_zero
@@ -69,22 +69,38 @@ class EmbeddingModel(nn.Module):
         #res = self.get_similarity(model_output, self.get_label_embedding_repr(label))
         label_embedding_output = self.model(self.get_label_embedding_repr(label))
 
+
+
         similarity = self.get_similarity(model_output, label_embedding_output)
 
 
-        loss = nn.MSELoss(reduction='none')(model_output, label_embedding_output)
+        loss = nn.MSELoss(reduction='none')(model_output, label_embedding_output).mean(dim=-1)
         loss = loss + nn.MSELoss(reduction='none')(similarity, torch.ones_like(similarity))
-        return loss
 
-    def get_label_embedding_repr(self, label):
+        weights = torch.zeros_like(loss)
+        weights[label > 0.5] = 0.9
+        weights[label <= 0.5] = 0.1
+
+
+        return loss * weights
+
+    def get_label_embedding_repr(self, label, force_label: Optional[int] = None):
         res = torch.zeros(dtype=label.dtype, device=label.device, size=(label.shape[0], label.shape[1], self.zero_embedding.weight.shape[-1]))
         label = label.squeeze(dim=-1)
-        pos_mask = label > 0.5
-        res[pos_mask] = self.one_embedding.weight
-        res[~pos_mask] = self.zero_embedding.weight
 
-        res[0] = self.get_pos_embedded_version(res[0])
-        res[1] = self.get_pos_embedded_version(res[1])
+        if force_label is None:
+            pos_mask = label > 0.5
+            res[pos_mask] = self.one_embedding.weight[0]
+            res[~pos_mask] = self.zero_embedding.weight[0]
+        else:
+            if force_label > 0.5:
+                res[:] = self.one_embedding.weight[0]
+            else:
+                res[:] = self.zero_embedding.weight[0]
+
+        for i in range(label.shape[0]):
+            res[i] = self.get_pos_embedded_version(res[i])
+            res[i] = self.get_pos_embedded_version(res[i])
 
         return res
 

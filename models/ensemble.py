@@ -1,7 +1,7 @@
 from torch import nn
 
 from models.linear import Linear
-from models.lstm import LSTM
+from models.rnn import LSTM
 
 
 class EnsembleLinearLSTM(nn.Module):
