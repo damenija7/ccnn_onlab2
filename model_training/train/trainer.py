@@ -12,6 +12,7 @@ from tqdm.auto import tqdm
 
 from model_training.dataset.cc_prediction_dataset import CCPredictionDataset
 from model_training.dataset.cc_prediction_dataset_per_residue import CCPredictionDatasetPerResidue
+from models import rnn
 
 
 class Trainer:
@@ -41,6 +42,9 @@ class Trainer:
         else:
             self.transform_train_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
 
+
+        self.half = False
+
     def get_dataset_type(self, dataset):
         if isinstance(dataset, CCPredictionDataset):
             return CCPredictionDataset
@@ -69,6 +73,10 @@ class Trainer:
 
         optimizer = optim.Adam(model.parameters())
         #optimizer = optim.RMSprop(model.parameters())
+
+        if self.half:
+            model.half()
+            optimizer = optim.Adam(model.parameters(), eps=10e-4)
 
         self.previous_training_sensitivity, self.previous_validation_sensitivity = None, None
 
@@ -128,7 +136,6 @@ class Trainer:
 
         device = next(model.parameters()).device
 
-
         model.train()
         for sequences, labels in tqdm_training_batch:
             torch.cuda.empty_cache()
@@ -136,19 +143,16 @@ class Trainer:
             sequences_orig, labels_orig = sequences, labels
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
-            labels = pad_sequence(labels, batch_first=True).to(device)
-
-            seq_lens = [len(seq) for seq in sequences]
-            self.set_current_batch_padding_mask(labels, seq_lens)
-
-            sequences = self.transform_train_sequences(sequences)
-            sequences = pad_sequence(sequences, batch_first=True).to(device)
+            labels, labels_orig, sequences, sequences_orig = self.convert_seq_label(sequences, labels, device)
 
             # reset gradients stored in optimizer
             optimizer.zero_grad()
 
             # get predictions of model
-            preds = model(sequences, labels)
+            if isinstance(model, rnn.Transformer):
+                preds = model(sequences_orig, labels_orig)
+            else:
+                preds = model(sequences, labels)
 
             if isinstance(preds, tuple):
                 preds, loss = preds
@@ -184,6 +188,23 @@ class Trainer:
 
         return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in train_epoch_stats}
 
+    def convert_seq_label(self, sequences, labels, device):
+        labels_orig = [label.to(device) for label in labels]
+        labels = pad_sequence(labels, batch_first=True).to(device)
+        seq_lens = [len(seq) for seq in sequences]
+        self.set_current_batch_padding_mask(labels, seq_lens)
+        sequences = self.transform_train_sequences(sequences)
+        sequences_orig = [sequence.to(device) for sequence in sequences]
+        sequences = pad_sequence(sequences, batch_first=True).to(device)
+
+        if self.half:
+            sequences = sequences.half()
+            labels = labels.half()
+            labels_orig = [label.half() for label in labels_orig]
+            sequences_orig = [sequence.half() for sequence in sequences_orig]
+
+        return labels, labels_orig, sequences, sequences_orig
+
     def set_current_batch_padding_mask(self, labels, seq_lens):
         self.current_batch_padding_mask = torch.empty(labels.shape[:2], dtype=torch.bool, device=labels.device)
         for i, seq_len in enumerate(seq_lens):
@@ -205,15 +226,7 @@ class Trainer:
             torch.cuda.empty_cache()
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
-            labels = pad_sequence(labels, batch_first=True).to(device)
-
-            seq_lens = [len(seq) for seq in sequences]
-            self.set_current_batch_padding_mask(labels, seq_lens)
-
-            sequences = self.transform_val_sequences(sequences)
-            sequences = pad_sequence(
-                sequences, batch_first=True
-            ).to(device)
+            labels, labels_orig, sequences, sequences_orig = self.convert_seq_label(sequences, labels, device)
 
             with torch.no_grad():
                 # get predictions of model
@@ -265,6 +278,7 @@ class Trainer:
 
 
         labels = torch.squeeze(labels, dim=-1)
+        preds = torch.squeeze(preds, dim=-1)
 
         # Compensate for unbalanced dataset property by class weighting
         if not self.weighted_random_sampler:

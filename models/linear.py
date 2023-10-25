@@ -52,5 +52,5 @@ class Linear(nn.Module):
         self.model = nn.Sequential(*model_layers)
 
 
-    def forward(self, x):
+    def forward(self, x, labels = None):
         return self.model(x)

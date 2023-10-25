@@ -110,19 +110,19 @@ class TestConv3(torch.nn.Module):
 
         kern_size = 7
 
-        self.conv = torch.nn.Sequential(torch.nn.Conv1d(in_channels=in_channels, out_channels=in_channels//2, kernel_size=kern_size, padding=kern_size//2),
+        self.conv = torch.nn.Sequential(torch.nn.Conv1d(in_channels=in_channels, out_channels=in_channels//2, kernel_size=kern_size, padding=kern_size//2, padding_mode='circular'),
                                         torch.nn.ReLU(),
                                         torch.nn.BatchNorm1d(num_features=in_channels//2),
-                                    torch.nn.Conv1d(in_channels=in_channels//2, out_channels=in_channels//4, kernel_size=kern_size, padding=kern_size//2),
+                                    torch.nn.Conv1d(in_channels=in_channels//2, out_channels=in_channels//4, kernel_size=kern_size, padding=kern_size//2, padding_mode='circular'),
                                     torch.nn.ReLU(),
                                     torch.nn.BatchNorm1d(num_features=in_channels//4),
-                                    torch.nn.Conv1d(in_channels=in_channels//4, out_channels=1, kernel_size=kern_size, padding=kern_size//2))
+                                    torch.nn.Conv1d(in_channels=in_channels//4, out_channels=1, kernel_size=kern_size, padding=kern_size//2, padding_mode='circular'))
 
 
 
         self.tail = torch.nn.Softmax(dim=-1)
 
-    def forward(self, x):
+    def forward(self, x, label=None):
         x = torch.permute(x, (0,2,1))
         x = self.conv(x)
         x = torch.permute(x, (0, 2,1))

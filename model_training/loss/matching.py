@@ -73,7 +73,7 @@ class HungarianMatcher(nn.Module):
         cost_class[:, tgt_empty_object_mask] /= 10
 
         # Compute the L1 cost between boxes
-        cost_bbox = torch.cdist(out_bbox, tgt_bbox, p=1)
+        cost_bbox = torch.cdist(out_bbox.to(torch.float), tgt_bbox.to(torch.float), p=1)
         # Compute the giou cost betwen boxes
         cost_giou = 1.0-get_giou_batch(out_bbox, tgt_bbox)
 

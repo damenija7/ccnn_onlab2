@@ -98,7 +98,7 @@ class DetrLoss(_Loss):
         pred_boxes = non_padded_box_preds[:, :2]
         target_boxes = non_padded_box_targets[:, :2]
 
-        loss_dist = F.mse_loss(pred_boxes, target_boxes, reduction='none').sum()
+        loss_dist = F.l1_loss(pred_boxes, target_boxes, reduction='none').sum() / num_boxes
         loss_giou = (num_boxes - get_giou(pred_boxes, target_boxes).sum()) / num_boxes
 
         loss_dist = loss_dist

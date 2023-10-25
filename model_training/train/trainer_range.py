@@ -35,18 +35,28 @@ class TrainerRange:
         self.transform_val_sequences = lambda sequences: [self.sequence_embedder.embed(sequence) for sequence in
                                                             sequences]
 
+        self.half = False
+
 
 
     def train(
-            self, model: nn.Module, embedder: Callable, num_epochs: int, best_model_save_file_path: str
+            self, model: nn.Module, embedder: Callable, num_epochs: int, best_model_save_file_path: str, half: bool = False
     ) -> Dict[str, Any]:
         train_stats, val_stats = {}, {}
         best_loss = math.inf
 
         self.sequence_embedder = embedder
 
-        optimizer = optim.Adam(model.parameters())
-        # optimizer = optim.RMSprop(model.parameters())
+        self.half = half
+
+        #optimizer = optim.Adam(model.parameters())
+        #optimizer = optim.RMSprop(model.parameters())
+
+        if half:
+            model = model.half()
+            optimizer = optim.Adam(model.parameters(),
+                                   eps=10e-4)
+
 
         self.previous_training_sensitivity, self.previous_validation_sensitivity = None, None
 
@@ -106,17 +116,9 @@ class TrainerRange:
         model.train()
         for sequences, labels in tqdm_training_batch:
             # torch.cuda.empty_cache()
-            # debug
-            sequences_orig, labels_orig = sequences, labels
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
-            labels  = [label.to(device) for label in labels]
-
-            seq_lens = [len(seq) for seq in sequences]
-            self.set_current_batch_padding_mask(labels, seq_lens)
-
-            sequences = self.transform_train_sequences(sequences)
-            sequences = [sequence.to(device) for sequence in sequences]
+            labels, sequences = self.transform_labels_sequences(device, labels, sequences)
 
             # reset gradients stored in optimizer
             optimizer.zero_grad()
@@ -133,10 +135,9 @@ class TrainerRange:
                 raise Exception("Model generated prediction contains nan")
 
             # get gradients
-            try:
-                loss.backward()
-            except:
-                pass
+            loss.backward()
+
+
 
             # update weights
             optimizer.step()
@@ -165,6 +166,22 @@ class TrainerRange:
         return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in
                 train_epoch_stats}
 
+    def transform_labels_sequences(self, device, labels, sequences):
+        seq_lens = [len(seq) for seq in sequences]
+        sequences = self.transform_train_sequences(sequences)
+
+        if self.half:
+            labels = [label.to(device).half() for label in labels]
+            sequences = [sequence.to(device).half() for sequence in sequences]
+        else:
+            labels = [label.to(device) for label in labels]
+            sequences = [sequence.to(device) for sequence in sequences]
+
+        self.set_current_batch_padding_mask(labels, seq_lens)
+
+
+        return labels, sequences
+
     def validate_epoch(self, model):
         val_epoch_stats = {'loss': [], 'accuracy': [], 'sensitivity': [], 'precision': [], 'F1': []}
 
@@ -180,13 +197,7 @@ class TrainerRange:
             # torch.cuda.empty_cache()
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
-            labels = [label.to(device) for label in labels]
-
-            seq_lens = [len(seq) for seq in sequences]
-            self.set_current_batch_padding_mask(labels, seq_lens)
-
-            sequences = self.transform_val_sequences(sequences)
-            sequences = [sequence.to(device) for sequence in sequences]
+            labels, sequences = self.transform_labels_sequences(device, labels, sequences)
 
             with torch.no_grad():
                 preds = model(sequences)

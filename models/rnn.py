@@ -26,6 +26,8 @@ class LSTM(nn.Module):
         self.lin = nn.Linear(in_features=in_channels, out_features=1)
         self.sig = nn.Sigmoid()
 
+
+
     def forward(self, x):
         output, (h_n, c_n) = self.model(x)
 
@@ -146,36 +148,55 @@ class Transformer(nn.Module):
 
         if self.training:
             x_padded: torch.Tensor = pad_sequence(x, batch_first=True, padding_value=-float('inf'))
-            padding_mask = (x_padded[:, :, 0].squeeze(dim=-1) > -float('inf')).float()
+
+            padding_mask_float, padding_mask_bool = self.get_padding_mask(x, x_padded)
             x_padded = torch.nan_to_num(x_padded, neginf=0.0)
+
+
             label_padded: torch.Tensor = pad_sequence(label, batch_first=True, padding_value=0.0)
-            current_decoder_input = self.get_output(x_padded, label_padded, padding_mask)
+            current_decoder_input = self.get_output(x_padded, label_padded, padding_mask_float)
         else:(
             current_decoder_input) = pad_sequence([self.get_output_recurrent_mode(x=x[i], starting_query=self.start_query.weight, label=None) for i in range(x.shape[0])],
                                                   batch_first=True)
 
         return current_decoder_input
 
+    def get_padding_mask(self, x, x_padded):
+        # if True then it is masked
+        padding_mask_bool = ~(x_padded[:, :, 0].squeeze(dim=-1) > -float('inf'))
+        padding_mask_float = torch.zeros_like(padding_mask_bool, dtype=x[0].dtype, device=padding_mask_bool.device)
+        padding_mask_float[padding_mask_bool] = -float('inf')
+        return padding_mask_float, padding_mask_bool
+
     def get_output(self, x:torch.Tensor, label: torch.Tensor, padding_mask: torch.Tensor):
         tgt = self.get_teacher_forcing_input(label)
 
 
         mem_mask, tgt_mask = self.get_mem_tgt_mask(padding_mask)
+        mem_mask_bool, tgt_mask_bool = torch.ones_like(mem_mask, dtype=torch.bool), torch.ones_like(tgt_mask, dtype=torch.bool)
+        # dont mask if no padding
+        mem_mask_bool[mem_mask > -float('inf')] = False
+        tgt_mask_bool[tgt_mask > -float('inf')] = False
 
-        res = self.decoder(memory=x, memory_mask=mem_mask, tgt=tgt, tgt_mask=tgt_mask)[:, 1:, :]
+        mem_key_mask = padding_mask
+
+        res = self.decoder(memory=x, tgt=tgt,
+                           memory_mask=mem_mask, tgt_mask=tgt_mask)[:, 1:, :]
         res = self.classifier(res)
         return res
 
     def get_mem_tgt_mask(self, padding_mask):
         # padding part in tgt_mask, mem_mask
-        tgt_mask = torch.cat([torch.ones_like(padding_mask[:, 0]).unsqueeze(dim=-1), padding_mask], dim=-1)
-        mem_mask = tgt_mask[:, :, None] * padding_mask[:, None, :]
-        tgt_mask = tgt_mask[:, :, None] * tgt_mask[:, None, :]
+        tgt_mask = torch.cat([torch.zeros_like(padding_mask[:, 0]).unsqueeze(dim=-1), padding_mask], dim=-1)
+        mem_mask = tgt_mask[:, :, None] + padding_mask[:, None, :]
+        tgt_mask = tgt_mask[:, :, None] + tgt_mask[:, None, :]
+
+
         # causal mask for tgt
         # tgt_mask = tgt_mask.tril()
         # ACCOUNT FOR MULTI HEAD SOLUTION
-        tgt_mask = torch.cat([tgt_mask] * 8, dim=0)
-        mem_mask = torch.cat([mem_mask] * 8, dim=0)
+        tgt_mask = torch.cat([tgt_mask] * self.num_heads, dim=0)
+        mem_mask = torch.cat([mem_mask] * self.num_heads, dim=0)
         return mem_mask, tgt_mask
 
     def get_teacher_forcing_input(self, batched_label):
