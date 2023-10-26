@@ -49,7 +49,7 @@ class TrainerRange:
 
         self.half = half
 
-        #optimizer = optim.Adam(model.parameters())
+        optimizer = optim.Adam(model.parameters())
         #optimizer = optim.RMSprop(model.parameters())
 
         if half:

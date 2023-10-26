@@ -4,7 +4,7 @@ import torch
 from torch import nn
 
 from models import PositionalEncoding
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pad_sequence, unpad_sequence
 
 
 class LSTM(nn.Module):
@@ -122,6 +122,70 @@ class EmbeddingModel(nn.Module):
         return x + self.pos_encoder.weight[:len(x)]
 
 
+class TransformerEncoder(nn.Module):
+    def __init__(self, input_dim: int = 1024, hidden_dim: int = 1024, output_dim: int = 1, num_heads: int = 8, num_layers = 2):
+        super().__init__()
+        self.input_dim, self.hidden_dim, self.output_dim, self.num_heads = input_dim, hidden_dim, output_dim, num_heads
+
+        self.model_layer = nn.TransformerEncoderLayer(
+            d_model=input_dim,
+            nhead=num_heads,
+            dim_feedforward=2048,
+            batch_first=True
+        )
+        self.model = nn.TransformerEncoder(self.model_layer, num_layers=num_layers)
+
+        self.classifier = nn.Sequential(nn.Linear(in_features=input_dim, out_features=output_dim),
+                                        nn.Sigmoid())
+
+        self.unknown_mask = nn.Embedding(1,  input_dim)
+        self.position_enc = nn.Embedding(5000, input_dim)
+
+    def forward(self, x_unbatched, label_unbatched = None):
+        x_lens = [len(x_i) for x_i in x_unbatched]
+        x_padded = pad_sequence(x_unbatched, batch_first=True, padding_value=-float('inf'))
+        x_padding_mask = (x_padded == -float('inf'))[:, :, 0]
+        #src_key_padding_mask = torch.cat([x_padding_mask] * 8)
+        src_key_padding_mask = x_padding_mask
+
+        # self.put_masked_values(x_lens, x_padded)
+
+        out = self.model(
+            src=x_padded,
+            src_key_padding_mask=src_key_padding_mask,
+        )
+        out = self.classifier(out)
+
+        if label_unbatched is not None:
+            loss = self.get_loss(out, label_unbatched)
+
+            return out, loss
+
+        return out
+
+    def get_loss(self, out, label_unbatched):
+        seq_lens = [len(label_i) for label_i in label_unbatched]
+
+        outs_flattened = torch.cat(unpad_sequence(out, seq_lens, batch_first=True)).squeeze()
+        labels_flattened = torch.cat([label_unbatched]).squeeze()
+
+        weight = labels_flattened.clone()
+        weight[labels_flattened > 0.5] = 0.9
+        weight[labels_flattened < 0.5] = 0.1
+
+        return nn.BCELoss(weight=weight)(outs_flattened, labels_flattened)
+
+    def put_masked_values(self, x_lens, x_padded):
+        # unknown mask
+        for i, x_i_len in enumerate(x_lens):
+            for j in range(x_i_len):
+                if torch.rand((1,)) < 0.1:
+                    x_padded[i, j] = self.unknown_mask.weight[0] + self.position_enc.weight[j]
+
+            # padding_idx = torch.randint(low=0, high=x_i_len, size=(1,))
+            # x_padded[i, padding_idx] = self.unknown_mask.weight[0] + self.position_enc.weight[padding_idx]
+
+
 class Transformer(nn.Module):
     def __init__(self, input_dim: int = 1024, hidden_dim: int = 1024, output_dim: int = 1, num_heads: int = 8):
         super().__init__()
@@ -142,15 +206,20 @@ class Transformer(nn.Module):
         self.start_query = nn.Embedding(1, input_dim)
         self.one_embedding = nn.Embedding(1, input_dim)
         self.zero_embedding = nn.Embedding(1, input_dim)
+        self.unknown_mask = nn.Embedding(1, input_dim)
 
     def forward(self, x: List[torch.Tensor], label: Optional[List[torch.Tensor]] = None):
         # TODO Parallel processing
 
         if self.training:
+
             x_padded: torch.Tensor = pad_sequence(x, batch_first=True, padding_value=-float('inf'))
 
             padding_mask_float, padding_mask_bool = self.get_padding_mask(x, x_padded)
             x_padded = torch.nan_to_num(x_padded, neginf=0.0)
+
+
+
 
 
             label_padded: torch.Tensor = pad_sequence(label, batch_first=True, padding_value=0.0)
@@ -193,16 +262,25 @@ class Transformer(nn.Module):
 
 
         # causal mask for tgt
-        # tgt_mask = tgt_mask.tril()
+        tgt_mask = tgt_mask.tril()
         # ACCOUNT FOR MULTI HEAD SOLUTION
         tgt_mask = torch.cat([tgt_mask] * self.num_heads, dim=0)
         mem_mask = torch.cat([mem_mask] * self.num_heads, dim=0)
         return mem_mask, tgt_mask
 
     def get_teacher_forcing_input(self, batched_label):
-        return pad_sequence([torch.cat(
+        tgt_unpadded= [torch.cat(
             [self.get_start_query()] + [self.get_embedding(l, i+1) for i, l in
-                                         enumerate(label.squeeze())]) for label in batched_label], batch_first=True)
+                                         enumerate(label.squeeze())]) for label in batched_label]
+
+        for i in range(len(tgt_unpadded)):
+            tgt_i = tgt_unpadded[i]
+            mask_idx = torch.randint(low=1, high=len(tgt_i), size=(1,))
+            tgt_i[mask_idx] = self.unknown_mask.weight[0]
+
+        tgt = pad_sequence(tgt_unpadded, batch_first=True)
+
+        return tgt
 
     def get_output_recurrent_mode(self, x: torch.Tensor, starting_query: torch.Tensor, label: Optional[torch.Tensor] = None):
         current_decoder_input = torch.zeros(size=(x.shape[0] + 1, self.input_dim), dtype=x.dtype, device=x.device)

@@ -88,4 +88,7 @@ class EmbeddingCacher:
         return embeddings
 
     def __call__(self, sequences: List[str]) -> List[Tensor]:
-        return self.get_embeddings(sequences)
+        if isinstance(sequences, list):
+            return self.get_embeddings(sequences)
+
+        return self.get_embeddings([sequences])[0]
