@@ -6,6 +6,51 @@ from torch import nn
 from models import PositionalEncoding
 from torch.nn.utils.rnn import pad_sequence, unpad_sequence
 
+from yet_another_retnet import retnet
+from torch.nn import functional as F
+
+class RetNet(nn.Module):
+    def __init__(self, in_channels: int = 1024, num_layers = 1, num_heads = 8):
+        super().__init__()
+
+        self.model = retnet.RetNet(
+            num_tokens=1,
+            d_model=in_channels,
+            nhead=num_heads,
+            num_layers=num_layers
+        )
+        self.unknown_mask = nn.Embedding(1, in_channels)
+        self.position_enc = nn.Embedding(5000, in_channels)
+
+    def put_masked_values(self, x, x_lens):
+        # unknown mask
+        for i, x_i_len in enumerate(x_lens):
+            mask_indices = (torch.rand((x_i_len,)) < 0.1).nonzero().squeeze()
+            if mask_indices.numel() > 0:
+                if mask_indices.numel() == 1:
+                    mask_indices = mask_indices.item()
+                    mask_indices_len = 1
+                else:
+                    mask_indices_len = len(mask_indices)
+
+                x[i][mask_indices] = torch.cat([self.unknown_mask.weight]*mask_indices_len) + self.position_enc.weight[mask_indices]
+
+            #for j in range(x_i_len):
+            #    if torch.rand((1,)) < 0.1:
+            #        x[i][j] = self.unknown_mask.weight[0] + self.position_enc.weight[j]
+
+
+
+    def forward(self, x, labels = None):
+        if self.training:
+            self.put_masked_values(x, [len(x_i) for x_i in x])
+
+        out = self.model.decoder.forward_parallel(x)
+        out = self.model.out(out)
+        out = F.sigmoid(out)
+
+        return out
+
 
 class LSTM(nn.Module):
     def __init__(self, in_channels: int, out_channels: int = 1, *args, **kwargs):

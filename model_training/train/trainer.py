@@ -117,7 +117,7 @@ class Trainer:
 
             # print acc, val
             tqdm.write(
-                f"\nTrain_Loss: {train_stats['loss'][-1]}, Val_Loss: {val_stats['loss'][-1]}, Val_Accuracy: {val_stats['accuracy'][-1]} Val_Sensitivity: {val_stats['sensitivity'][-1]}, Val_Precision: {val_stats['precision'][-1]}, Val_F1: {val_stats['F1'][-1]}"
+                f"\nTrain_Loss: {train_stats['loss'][-1]}, Val_Loss: {val_stats['loss'][-1]}, Val_Accuracy: {val_stats['accuracy'][-1]} Val_Sensitivity: {val_stats['sensitivity'][-1]}, Val_Precision: {val_stats['precision'][-1]}, Val_F1: {val_stats['F1'][-1]}, Val_IOU: {val_stats['iou'][-1]}"
             )
 
 
@@ -212,9 +212,6 @@ class Trainer:
     def validate_epoch(self, model):
         val_epoch_stats = {'loss': [], 'accuracy': [], 'sensitivity': [], 'precision': [], 'F1': []}
 
-        if self.previous_validation_sensitivity is None:
-            self.previous_validation_sensitivity = 0.0
-        #self.previous_validation_sensitivity = 0.0
 
         device = next(model.parameters()).device
 
