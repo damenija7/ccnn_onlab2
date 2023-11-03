@@ -11,6 +11,7 @@ from Bio.PDB.Model import Model
 from Bio.PDB.DSSP import DSSP
 import numpy as np
 from torch import nn
+import utils
 
 
 class StructPred(nn.Module):
@@ -57,46 +58,7 @@ class StructPred(nn.Module):
         return out
 
 
-    def get_data(self, pdb_path, id = None) -> Tuple[np.array, np.array]:
-        pdb_parser = Bio.PDB.PDBParser()
-
-        if id == None:
-            id = pdb_path.rsplit('/')[0]
-
-        # %%
-        struct = pdb_parser.get_structure(file=pdb_path, id=id)
-        # %%
-
-
-        # %%
-        models: List[Model] = list(struct.get_models())
-        atoms_by_model: List[List[Atom]] = [list(model.get_atoms()) for model in models]
-        atom_coords_by_model = [np.stack([atom.get_coord() for atom in atoms]) for atoms in atoms_by_model]
-        dssp_by_model: List[DSSP] = [Bio.PDB.DSSP(model, pdb_path, dssp=self.dssp_path) for model in models]
-        # %%
-        from typing import Tuple
-
-        alpha_helices_by_model: List[List[Tuple]] = []
-
-        for dssp in dssp_by_model:
-            alpha_helices = []
-            for res_key in dssp.keys():
-                res = dssp[res_key]
-                # is alpha helix
-                if res[2] == 'H':
-                    alpha_helices.append(res)
-
-            alpha_helices_by_model.append(alpha_helices)
-        # %%
-
-        alpha_helix_mask_by_model = [np.zeros(shape=(len(atom_coords),), dtype=bool) for atom_coords in
-                                     atom_coords_by_model]
-
-        for alpha_helix_mask, alpha_helices in zip(alpha_helix_mask_by_model, alpha_helices_by_model):
-            for res_info in alpha_helices:
-                # 0 <-> RES INDEX
-                alpha_helix_mask[res_info[0]] = True
-        # %%
-        return atom_coords_by_model, alpha_helix_mask_by_model
+    def get_data(self, pdb_path, id = None) -> Tuple[np.array, np.array, np.array]:
+        return utils.get_data(pdb_path=pdb_path, dssp_path=self.dssp_path, id=id)
 
 
