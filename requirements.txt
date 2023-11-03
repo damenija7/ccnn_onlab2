@@ -30,6 +30,9 @@ torch
 torchvision
 torchaudio
 
+# find cycles
+networkx
+
 # pandas
 pandas
 
