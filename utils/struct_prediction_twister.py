@@ -5,8 +5,6 @@ import torch
 from numpy import dot
 from numpy.linalg import norm
 
-from utils.struct_prediction import get_data_struct
-
 
 def new_dihedral(p0, p1, p2, p3):
     """Praxeolitic formula
@@ -38,26 +36,44 @@ def new_dihedral(p0, p1, p2, p3):
 
 
 
-def twister(pdb_path, dssp_path, id=None):
-    atom_coords_by_model, alpha_helix_mask_by_model, alpha_helix_ranges_by_model = get_data_struct(pdb_path, dssp_path, id)
+def get_twister_data(data_struct, data_socket):
+    alpha_helix_mask_by_model, alpha_helix_ranges_by_model = data_struct['alpha_helix_mask_by_model'], data_struct['alpha_helix_ranges_by_model']
+    alpha_carbon_coords_by_model = data_struct['alpha_carbon_coords_by_model']
+    coiled_coils_by_model = data_socket['coiled_coils_by_model']
 
     results = []
 
-    for atom_coords, alpha_helix_mask, alpha_helix_ranges in zip(atom_coords_by_model, alpha_helix_mask_by_model, alpha_helix_ranges_by_model):
-        bundle = twister_get_alpha_helix_bundles(atom_coords, alpha_helix_mask, alpha_helix_ranges)
 
-        results.append(twister_main(atom_coords, alpha_helix_mask, alpha_helix_ranges))
+    for model_idx, (alpha_helix_mask, alpha_helix_ranges, coiled_coils, alpha_carbon_coords) in enumerate(zip(alpha_helix_mask_by_model, alpha_helix_ranges_by_model, coiled_coils_by_model, alpha_carbon_coords_by_model)):
+        num_residues = alpha_carbon_coords.shape[0]
+
+        model_mask = torch.zeros(size=(num_residues,), dtype=torch.bool)
+
+        for coiled_coil in coiled_coils:
+            cc_mask = np.zeros(shape=(num_residues,), dtype=np.bool_)
+            cc_alpha_helix_ranges = []
+            for alpha_helix_idx in coiled_coil:
+                alpha_helix_range = alpha_helix_ranges[alpha_helix_idx]
+                cc_mask[alpha_helix_range[0]:alpha_helix_range[1]] = True
+                cc_alpha_helix_ranges.append(alpha_helix_range)
+
+            model_mask |= twister_main(alpha_carbon_coords, cc_mask, cc_alpha_helix_ranges)
+
+        results.append(model_mask)
+
+
+
 
     return results
 
 
-def twister_main(atom_coords: np.ndarray, alpha_helix_mask: np.ndarray, alpha_helix_ranges: List[Tuple[int, int]]) -> np.ndarray:
-    num_residues = len(atom_coords)
+def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_helix_ranges: List[Tuple[int, int]]) -> np.ndarray:
+    num_residues = len(alpha_carbon_coords)
 
     alpha_helix_ranges = np.array(alpha_helix_ranges, dtype=np.int64)
 
     # atom positioncoords
-    A = atom_coords
+    A = alpha_carbon_coords
 
     # (N+2, 3)
 
@@ -82,7 +98,7 @@ def twister_main(atom_coords: np.ndarray, alpha_helix_mask: np.ndarray, alpha_he
     max_chain_len = max(range[1] - range[0] for range in alpha_helix_ranges)
 
 
-    C = np.zeros(shape=(max_chain_len, 3), dtype=atom_coords.dtype)
+    C = np.zeros(shape=(max_chain_len, 3), dtype=alpha_carbon_coords.dtype)
     C_num_chains = np.zeros_like(C[:,0], dtype=np.int64)
 
     for range_start, range_end in alpha_helix_ranges:

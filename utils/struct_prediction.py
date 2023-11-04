@@ -7,6 +7,7 @@ from Bio.PDB.DSSP import DSSP
 from Bio.PDB.Residue import Residue
 
 from utils.struct_prediction_socket import get_socket_data
+from utils.struct_prediction_twister import get_twister_data
 
 test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
 test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
@@ -122,3 +123,4 @@ def get_dssp_info(models, dssp_path, pdb_path):
 if __name__ == '__main__':
     data_struct = get_data_struct(test_fname, test_dssp_path)
     data_socket = get_socket_data(data_struct)
+    data_twister = get_twister_data(data_struct, data_socket)

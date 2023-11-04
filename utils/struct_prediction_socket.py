@@ -1,5 +1,6 @@
 from typing import List, Tuple
 
+import networkx
 import numpy as np
 from numpy.linalg import norm
 from numpy import dot
@@ -82,7 +83,8 @@ def get_socket_data(data_struct):
         # find cycles
         from networkx import simple_cycles
 
-        cycles = simple_cycles(knob_hole_matrix)
+        graph = networkx.from_numpy_array(knob_hole_matrix, create_using=networkx.DiGraph)
+        cycles = simple_cycles(graph)
 
         coiled_coils = set()
         for cycle in cycles:
@@ -93,7 +95,7 @@ def get_socket_data(data_struct):
         coiled_coils_by_model.append(list(coiled_coils))
 
 
-
+    return {'coiled_coils_by_model': coiled_coils_by_model}
 
 
 
