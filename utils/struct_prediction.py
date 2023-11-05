@@ -124,8 +124,8 @@ def get_dssp_info(models, dssp_path, pdb_path):
 
 
 #test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
-#test_fname = '2zta.pdb'
-test_fname = '1d7m.pdb'
+test_fname = '2zta.pdb'
+#test_fname = '1d7m.pdb'
 test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
 
 if __name__ == '__main__':

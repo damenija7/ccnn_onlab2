@@ -12,6 +12,9 @@ from Bio.PDB.DSSP import DSSP
 import numpy as np
 from torch import nn
 import utils
+from utils.struct_prediction import get_data_struct
+from utils.struct_prediction_socket import get_socket_data
+from utils.struct_prediction_twister import get_twister_data
 
 
 class StructPred(nn.Module):
@@ -21,7 +24,7 @@ class StructPred(nn.Module):
         )
         self.model.eval()
 
-        self.dssp_path =  ''
+        self.dssp_path =  'utils/dssp-x86_64.AppImage'
         self.socket_path = ''
         self.sc = SamCC(bin_paths={'dssp':self.dssp_path, 'socket':self.socket_path})
 
@@ -36,26 +39,29 @@ class StructPred(nn.Module):
         outputs = []
 
         for sequence in sequences:
-            pdb_path = f"cache/{sequences}.pdb"
-            out_path = f"cache/{sequences}.samcc"
+            pdb_path = f"cache/{sequence}.pdb"
+            out_path = f"cache/{sequence}.samcc"
 
             if not os.path.exists(pdb_path):
                 output = self.model.infer_pdb(sequence)
                 with open(pdb_path, "w") as f:
                     f.write(output)
-                self.sc.run_samcc_turbo(pdbpath=pdb_path, outpath='/path/to/results',  save_pse=False)
 
-                output = self.get_output(sequence=sequence, samcc_path = out_path)
 
-                outputs.append(output)
+            output = self.get_output(sequence=sequence, samcc_path = out_path)
+            outputs.append(output)
 
         return outputs
 
 
     def get_output(self, sequence, samcc_path):
-        out = torch.zeros(size=(sequence,), dtype=torch.float32)
+        pdb_path = f"cache/{sequence}.pdb"
 
-        return out
+        data_struct = get_data_struct(pdb_path, self.dssp_path)
+        data_socket = get_socket_data(data_struct)
+        data_twister = get_twister_data(data_struct, data_socket)
+
+        return data_twister
 
 
     def get_data(self, pdb_path, id = None) -> Tuple[np.array, np.array, np.array]:

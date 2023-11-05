@@ -1,5 +1,7 @@
 # bio_embeddings[all]
 
+yet_another_retnet
+
 
 fair-esm[esmfold]
 # OpenFold and its remaining dependency
