@@ -9,9 +9,9 @@ from Bio.PDB.Residue import Residue
 from utils.struct_prediction_socket import get_socket_data
 from utils.struct_prediction_twister import get_twister_data
 
-test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
-test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
 
+AMINO_ACID = set(['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY',
+                  'HIS', 'ILE', 'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER', 'THR', 'TRP', 'TYR', 'VAL'])
 
 def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, np.array]:
     pdb_parser = Bio.PDB.PDBParser()
@@ -31,7 +31,7 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 
     alpha_helix_ranges_by_model, alpha_helix_mask_by_model = get_dssp_info(models, dssp_path, pdb_path)
-    alpha_carbon_coords_by_model = [np.stack([res['CA'].coord for res in residues]) for residues in residues_by_model]
+    alpha_carbon_coords_by_model = [np.stack([(res['CA']).coord for res in residues if 'CA' in res]) for residues in residues_by_model]
     socket_center_coords_by_model = []
 
     for model_idx, model in enumerate(models):
@@ -40,6 +40,9 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
         socket_center_coords = []
 
         for residue in residues:
+            if 'CA' not in residue:
+                continue
+
             # BASED ON SOCKET
             if residue.resname == 'GLY':
                 center = residue['CA'].coord
@@ -119,6 +122,11 @@ def get_dssp_info(models, dssp_path, pdb_path):
     return alpha_helix_ranges_by_model, alpha_helix_mask_by_model
 
 
+
+#test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
+#test_fname = '2zta.pdb'
+test_fname = '1d7m.pdb'
+test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
 
 if __name__ == '__main__':
     data_struct = get_data_struct(test_fname, test_dssp_path)
