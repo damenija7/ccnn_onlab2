@@ -147,7 +147,7 @@ def get_socket_data(data_struct):
             cycles_chain |= cycles_chain_i
 
 
-        traversal_result = cycles
+        traversal_result = cycles_chain
 
         coiled_coils = set()
 
@@ -174,9 +174,10 @@ def get_socket_data(data_struct):
 
             if ( len(alpha_helices_involved) <= 2 and np.all(alpha_helix_order[alpha_helix_order > 0] >= 2) ) \
                     or len(alpha_helices_involved) > 3:
-                alpha_helix_involved_per_res = tuple(sorted(alpha_helices_involved))
-                coiled_coils.add(alpha_helix_involved_per_res)
-        coiled_coils_by_model.append(list(coiled_coils))
+                alpha_helix_involved_per_res = frozenset(alpha_helices_involved)
+                if not any(alpha_helix_involved_per_res <= cc for cc in coiled_coils):
+                    coiled_coils.add(alpha_helix_involved_per_res)
+        coiled_coils_by_model.append([list(cc) for cc in coiled_coils])
 
 
     return {'coiled_coils_by_model': coiled_coils_by_model}

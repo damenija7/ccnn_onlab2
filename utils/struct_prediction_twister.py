@@ -37,14 +37,14 @@ def new_dihedral(p0, p1, p2, p3):
 
 
 def get_twister_data(data_struct, data_socket):
-    alpha_helix_mask_by_model, alpha_helix_ranges_by_model = data_struct['alpha_helix_mask_by_model'], data_struct['alpha_helix_ranges_by_model']
+    alpha_helix_ranges_by_model = data_struct['alpha_helix_ranges_by_model']
     alpha_carbon_coords_by_model = data_struct['alpha_carbon_coords_by_model']
     coiled_coils_by_model = data_socket['coiled_coils_by_model']
 
     results = []
 
 
-    for model_idx, (alpha_helix_mask, alpha_helix_ranges, coiled_coils, alpha_carbon_coords) in enumerate(zip(alpha_helix_mask_by_model, alpha_helix_ranges_by_model, coiled_coils_by_model, alpha_carbon_coords_by_model)):
+    for model_idx, (alpha_helix_ranges, coiled_coils, alpha_carbon_coords) in enumerate(zip(alpha_helix_ranges_by_model, coiled_coils_by_model, alpha_carbon_coords_by_model)):
         num_residues = alpha_carbon_coords.shape[0]
 
         model_mask = torch.zeros(size=(num_residues,), dtype=torch.bool)
