@@ -36,7 +36,7 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 
 
-    alpha_helix_ranges_by_model, alpha_helix_mask_by_model = get_dssp_info(models, dssp_path, pdb_path)
+    alpha_helix_ranges_by_model = get_dssp_info(models, dssp_path, pdb_path)
     alpha_carbon_coords_by_model = [np.stack([(res['CA']).coord for res in residues if 'CA' in res]) for residues in residues_by_model]
     socket_center_coords_by_model = []
 
@@ -68,10 +68,10 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
     # %%
     return {
-        'alpha_helix_mask_by_model': alpha_helix_mask_by_model,
         'alpha_helix_ranges_by_model': alpha_helix_ranges_by_model,
         'alpha_carbon_coords_by_model': alpha_carbon_coords_by_model,
-        'socket_center_coords_by_model': socket_center_coords_by_model
+        'socket_center_coords_by_model': socket_center_coords_by_model,
+        'models': models
     }
 
 
@@ -93,49 +93,35 @@ def get_dssp_info(models, dssp_path, pdb_path):
     alpha_helices_by_model: List[List[Tuple]] = []
 
     for dssp in dssp_by_model:
+        current_alpha_helix_start = None
         alpha_helices = []
-        for res_key in dssp.keys():
+        for res_idx, res_key in enumerate(dssp.keys()):
             res = dssp[res_key]
             # is alpha helix
             if res[2] == 'H':
-                alpha_helices.append(res)
+                if current_alpha_helix_start is None:
+                    current_alpha_helix_start = res_idx
+            else:
+                if current_alpha_helix_start is not None:
+                    alpha_helices.append((current_alpha_helix_start, res_idx))
+                    current_alpha_helix_start = None
+
+        if current_alpha_helix_start is not None:
+            alpha_helices.append((current_alpha_helix_start, len(dssp.keys())))
 
         alpha_helices_by_model.append(alpha_helices)
     # %%
 
-    alpha_helix_mask_by_model = [np.zeros(shape=(num_residues,), dtype=bool) for num_residues in
-                                 num_residues_by_model]
-    for alpha_helix_mask, alpha_helices in zip(alpha_helix_mask_by_model, alpha_helices_by_model):
-        for res_info in alpha_helices:
-            # 0 <-> RES INDEX ( counting starts from zero, must -= 1)
-            alpha_helix_mask[res_info[0] - 1] = True
-    alpha_helix_ranges_by_model = []
-    for alpha_helix_mask in alpha_helix_mask_by_model:
-        alpha_helix_ranges = []
 
-        helix_range_start_idx = None
 
-        for i, is_helix in enumerate(alpha_helix_mask):
-            if is_helix and helix_range_start_idx is None:
-                helix_range_start_idx = i
-            elif not is_helix and helix_range_start_idx is not None:
-                alpha_helix_ranges.append((helix_range_start_idx, i))
-                helix_range_start_idx = None
-
-        # check end
-        if helix_range_start_idx is not None:
-            alpha_helix_ranges.append((helix_range_start_idx, len(alpha_helix_mask)))
-            helix_range_start_idx = None
-
-        alpha_helix_ranges_by_model.append(alpha_helix_ranges)
-
-    return alpha_helix_ranges_by_model, alpha_helix_mask_by_model
+    return alpha_helices_by_model
 
 
 
 #test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
 #test_fname = '2zta.pdb'
-test_fname = '1d7m.pdb'
+# test_fname = '1d7m.pdb'
+test_fname='1gk4.pdb'
 test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
 
 if __name__ == '__main__':

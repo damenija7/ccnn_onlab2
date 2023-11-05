@@ -72,44 +72,43 @@ def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_hel
     num_residues = len(alpha_carbon_coords)
 
 
-
-    alpha_helix_ranges = np.array(alpha_helix_ranges, dtype=np.int64)
     alpha_helix_mask = cc_mask
-
-    parallel_state_by_chain = np.ones_like(alpha_helix_ranges[:, 0])
-
-    first_chain_dir = alpha_carbon_coords[alpha_helix_ranges[0,1]-1] - alpha_carbon_coords[alpha_helix_ranges[0,1]]
-    for i, (ah_start, ah_end) in enumerate(alpha_helix_ranges[1:]):
-        i = i+1
-        chain_dir = alpha_carbon_coords[ah_end-1] - alpha_carbon_coords[ah_start]
-
-        parallel_state_by_chain[i] = 1 if np.dot(first_chain_dir,chain_dir) >= 0 else -1
-
+    alpha_helix_ranges = np.array(alpha_helix_ranges, dtype=np.int64)
+    parallel_state_by_chain = get_parallel_state_by_chain(alpha_carbon_coords, alpha_helix_ranges)
 
     # atom positioncoords
     A = alpha_carbon_coords.astype(np.float64)
-    O = twister_get_O_alt(A, 0, A.shape[0], 1)
+    O = np.full_like(A, fill_value=float('-inf'))
+    O[1:-1] = twister_get_O_alt(A, 1, A.shape[0]-1, 1)
+
+
+    #for parallel_state, (ah_start, ah_end) in zip(parallel_state_by_chain, alpha_helix_ranges):
+    #    if parallel_state < 0 :
+    #        O[ah_start:ah_end] = O_n = twister_get_O_alt(A, ah_start, ah_end, parallel_state)
+
+    O_by_chain = [O[start:end] if parallel_state >= 0 else O[start:end][::-1] for parallel_state, (start, end) in zip(parallel_state_by_chain, alpha_helix_ranges)]
+    C, C_num_chains = get_C(O, alpha_carbon_coords, alpha_helix_ranges, parallel_state_by_chain)
+
+    O_prev, O_next = get_prev_next(O)
+
     # alpha helical phase yield per residue
-    delta_phi_n = np.zeros_like(O[:,0])
+    delta_phi_n = np.zeros_like(O[:, 0])
     # a_rad: local alpha helical radius per residue
     # a_rise: alpha helical rise per residue
-    a_rad = delta_phi_n.copy()
-    a_rise = delta_phi_n.copy()
-
-    for parallel_state, (ah_start, ah_end) in zip(parallel_state_by_chain, alpha_helix_ranges):
-        O[ah_start:ah_end] = O_n = twister_get_O_alt(A, ah_start, ah_end, parallel_state)
-
-    C, C_num_chains = get_C(O, alpha_carbon_coords, alpha_helix_ranges, parallel_state_by_chain)
+    a_rad = norm(O - A,axis=-1)
+    a_rise = (norm(O - O_prev, axis=-1) + norm(O_next - O, axis=-1)) / 2.0
 
 
 
 
     # local coiled coil radius
     cc_rad = np.zeros_like(C[:, 0])
-
-    for range_start, range_end in alpha_helix_ranges:
+    for parallel_state, (range_start, range_end) in zip(parallel_state_by_chain, alpha_helix_ranges):
         helix_len = range_end - range_start
-        cc_rad[:helix_len] += norm(C[:helix_len] - O[range_start:range_end], axis=-1)
+        if parallel_state > 0:
+            cc_rad[:helix_len] += norm(C[:helix_len] - O[range_start:range_end], axis=-1)
+        else:
+            cc_rad[:helix_len] += norm(C[:helix_len] - O[range_start:range_end][::-1], axis=-1)
 
     cc_rad /= (C_num_chains +(C_num_chains==0)).squeeze()
 
@@ -132,6 +131,24 @@ def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_hel
         O_by_chain.append(O[helix_start, helix_end])
 
 
+def get_parallel_state_by_chain(alpha_carbon_coords, alpha_helix_ranges):
+    parallel_state_by_chain = np.ones_like(alpha_helix_ranges[:, 0])
+    first_chain_dir = alpha_carbon_coords[alpha_helix_ranges[0, 1] - 1] - alpha_carbon_coords[alpha_helix_ranges[0, 0]]
+    for i, (ah_start, ah_end) in enumerate(alpha_helix_ranges[1:]):
+        i = i + 1
+        chain_dir = alpha_carbon_coords[ah_end - 1] - alpha_carbon_coords[ah_start]
+
+        parallel_state_by_chain[i] = 1 if np.dot(first_chain_dir, chain_dir) >= 0 else -1
+    return parallel_state_by_chain
+
+
+def get_prev_next(mat):
+    mat_padded = np.pad(mat, ((1, 1), (0, 0)), constant_values=float('-inf'))
+    mat_prev = mat_padded[0:-2]
+    mat_next = mat_padded[2:]
+    return mat_prev, mat_next
+
+
 def get_C(O, alpha_carbon_coords, alpha_helix_ranges, parallel_states_by_chain):
     max_chain_len = max((end-start) for start, end in alpha_helix_ranges)
 
@@ -142,7 +159,7 @@ def get_C(O, alpha_carbon_coords, alpha_helix_ranges, parallel_states_by_chain):
         if parallel_state > 0:
             C[:helix_len] += O[range_start:range_end]
         else:
-            C[:helix_len] += O[range_start:range_end][::-1]
+            C[:helix_len] += (O[range_start:range_end][::-1])
         C_num_chains[:helix_len] += 1
     C_num_chains = np.expand_dims(C_num_chains, -1)
     C /= (C_num_chains + (C_num_chains == 0))
@@ -151,17 +168,20 @@ def get_C(O, alpha_carbon_coords, alpha_helix_ranges, parallel_states_by_chain):
 
 def get_residue_assignments(alpha):
     residue_assignment = ['0' for _ in range(len(alpha))]
-    res_idx = 0
-    while res_idx < len(alpha) - 2:
-        res_idx_incr = 3
+    res_idx = 1
+    while res_idx < len(alpha) - 1:
+        res_idx_incr = 1
+
+        alpha_prev, alpha_curr, alpha_next = alpha[res_idx-1], alpha[res_idx], alpha[res_idx] + 1
 
         assignment = '0'
-        if alpha[res_idx] > 0 and alpha[res_idx - 1] < 0 and abs(alpha[res_idx - 1]) > abs(alpha[res_idx]):
+        if alpha_prev < 0 and alpha_curr > 0 and abs(alpha_prev) > abs(alpha_curr):
             assignment = 'a'
-        elif alpha[res_idx] < 0 and alpha[res_idx + 1] > 0 and abs(alpha[res_idx]) < abs(alpha[res_idx + 1]):
+        elif alpha_curr < 0 and alpha_next > 0 and abs(alpha_curr) < abs(alpha_next):
             assignment = 'd'
 
         if assignment == 'a':
+            res_idx_incr = 3
             try:
 
                 residue_assignment[res_idx] = assignment
@@ -262,7 +282,9 @@ def get_crick_phases(A, C, O, O_next, alpha_helix_mask, alpha_helix_ranges):
 
         # mixed[ah_start:ah_end] = np.dot(np.cross(O_O_next_ah, crick_second[ah_start:ah_end]), crick_first[ah_start:ah_end].transpose()).diagonal()
 
-    mixed = np.sign(np.cross(crick_first, crick_second)[:, -1])
+
+
+    mixed = np.sign(np.cross(crick_first, crick_second)[:,-1])
 
 
 
@@ -277,15 +299,13 @@ def get_crick_phases(A, C, O, O_next, alpha_helix_mask, alpha_helix_ranges):
 
 
 def angle_between_rad(a, b):
-    a_len, b_len = norm(a, axis=-1)[:, None], norm(b, axis=-1)[:, None]
-    return np.arccos(dot(a, b).transpose().diagonal() / a_len / b_len)
+    a_len, b_len = norm(a, axis=-1), norm(b, axis=-1)
+    return np.arccos(dot(a, b.transpose()).diagonal() / a_len / b_len)
 
 
 def twister_get_O_alt(A, ah_start, ah_end, parallel_state):
     A_orig = A
 
-    if parallel_state:
-        A_orig = np.flip(A, axis=0)
 
     A_orig_padded = np.pad(A_orig, pad_width=((1, 1), (0, 0)))
 
@@ -293,17 +313,16 @@ def twister_get_O_alt(A, ah_start, ah_end, parallel_state):
     A_padded = A_orig_padded[ah_start:ah_end+2]
 
 
+    if parallel_state < 0:
+        A, A_padded = A[::-1], A_padded[::-1]
 
-    current_start, current_end = 1, -1
-    A_prev = A_padded[current_start - 1:current_end - 1]
+
+
+    A_prev, A_next = A_padded[:-2], A_padded[2:]
     A_current = A
-    A_next = A_padded[current_start + 1:]
 
     I = get_bisection_angle(A_current=A_current, A_next=A_next, A_prev=A_prev)
-    # (N+1, 3)
-    I_padded = np.pad(I, pad_width=((0, 1), (0, 0)))
-    # (N, 3)
-    I_next = I_padded[1:]
+    I_prev, I_next = get_prev_next(I)
 
 
     A_coeff = np.zeros(shape=(A.shape[0], 3,3), dtype=np.float64)
@@ -334,14 +353,24 @@ def twister_get_O_alt(A, ah_start, ah_end, parallel_state):
     O_current = A_current + x[:, None] * I
     O_next = A_next + y[:, None] * I_next
 
+    O = O_combine(O_current, O_next)
+
+    if parallel_state < 0:
+        return O[::-1]
+
+    return O
 
 
+def O_combine(O_current, O_next):
     O = np.full_like(O_current, fill_value=float('-inf'))
-    # after first only has forwards calc
-    O[1] = O_current[1]
-    O[2:-2] = (O_current[2:-2] + O_next[1:-3]) / 2
-    # before last only has backwards calc
-    O[-2] = O_next[-3]
+    O[1:-1] = (O_current[1:-1] + O_next[0:-2]) / 2
+
+    O[0] = O_current[0]
+
+    if not np.any(np.isnan(O_current[-1]) | np.isinf(O_current[-1])):
+        O[-1] = (O_current[-1] + O_next[-2]) / 2.0
+    else:
+        O[-1] = O_next[-2]
 
     return O
 

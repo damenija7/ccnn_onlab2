@@ -1,3 +1,4 @@
+import queue
 from collections import Counter
 from typing import List, Tuple
 
@@ -84,16 +85,79 @@ def get_socket_data(data_struct):
         # find cycles
         from networkx import simple_cycles
 
-        graph = networkx.from_numpy_array(knob_hole_matrix, create_using=networkx.DiGraph)
-        cycles = list(simple_cycles(graph))
+        #graph = networkx.from_numpy_array(knob_hole_matrix, create_using=networkx.DiGraph)
+        ##traversal_result = list(simple_cycles(graph))
+        #traversal_result = list()
 
+        edge_visited_mat = np.zeros_like(knob_hole_matrix, dtype=np.bool_)
+
+        def dfs(start_node):
+            cycles = set()
+            cycles_chain = set()
+            visited = set()
+            visited_chain = set()
+            s = [start_node]
+            path = []
+            path_chain = []
+
+            while len(s) != 0:
+                node = s.pop()
+                node_chain = index_to_helix_range_index[node]
+                if node not in visited:
+                    # do shit
+                    #
+
+                    visited.add(node)
+                    visited_chain.add(node_chain)
+
+                    path.append(node)
+                    path_chain.append(node_chain)
+                    num_neighbors_added = 0
+                    for neighbor in np.flatnonzero(knob_hole_matrix[node]):
+                        neighbor_chain = index_to_helix_range_index[neighbor]
+                        if neighbor not in visited:
+                            s.append(neighbor)
+                            num_neighbors_added += 1
+
+                        if neighbor in path:
+                            # neighbor creates cycle
+                            cycles.add(tuple(path[path.index(neighbor):]))
+
+                        if neighbor_chain in path_chain:
+                            cycles_chain.add(tuple(path[path_chain.index(neighbor_chain):]))
+
+                    if num_neighbors_added == 0:
+                        path.pop()
+                        path_chain.pop()
+
+            return cycles, cycles_chain, visited
+
+        cycles, cycles_chain = set(), set()
+        visited = set()
+
+        indices_visit = np.flatnonzero(knob_hole_matrix.sum(axis=-1))
+        for idx_i in indices_visit:
+            if idx_i in visited:
+                continue
+
+            cycles_i, cycles_chain_i, visited_i = dfs(idx_i)
+
+            visited |= visited_i
+            cycles |= cycles_i
+            cycles_chain |= cycles_chain_i
+
+
+        traversal_result = cycles
 
         coiled_coils = set()
-        for cycle_graph in cycles:
+
+        num_alpha_helices_involved = [len(Counter([index_to_helix_range_index[cycle_i] for cycle_i in cycle]).keys()) for cycle in traversal_result]
+        traversal_result = [x[1] for x in sorted(enumerate(traversal_result), key=lambda i: -num_alpha_helices_involved[i[0]])]
+        for cycle_graph in traversal_result:
 
             alpha_helices_involved = sorted(Counter([index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph]).keys())
 
-            alpha_helix_order = np.zeros(shape=(len(alpha_helix_ranges), len(alpha_helix_ranges)))
+            traversal = np.zeros(shape=(len(alpha_helix_ranges), len(alpha_helix_ranges)))
 
             for cycle_idx in range(len(cycle_graph)):
                 cycle_idx_next = (cycle_idx + 1) % len(cycle_graph)
@@ -102,13 +166,14 @@ def get_socket_data(data_struct):
 
                 ah_idx, ah_idx_next = index_to_helix_range_index[cycle_idx], index_to_helix_range_index[cycle_idx_next]
 
-                alpha_helix_order[ah_idx, ah_idx_next] += 1
+                traversal[ah_idx, ah_idx_next] += 1
 
-            alpha_helix_order = np.floor((alpha_helix_order + alpha_helix_order.transpose()).sum(axis=-1) / 2).astype(np.int64)
+            alpha_helix_order = np.floor((traversal + traversal.transpose()).sum(axis=-1) / 2).astype(np.int64)
 
 
 
-            if np.all(alpha_helix_order[alpha_helix_order > 0] >= len(alpha_helices_involved)):
+            if ( len(alpha_helices_involved) <= 2 and np.all(alpha_helix_order[alpha_helix_order > 0] >= 2) ) \
+                    or len(alpha_helices_involved) > 3:
                 alpha_helix_involved_per_res = tuple(sorted(alpha_helices_involved))
                 coiled_coils.add(alpha_helix_involved_per_res)
         coiled_coils_by_model.append(list(coiled_coils))
