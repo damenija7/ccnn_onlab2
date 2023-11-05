@@ -113,16 +113,6 @@ def get_socket_data(data_struct):
                 coiled_coils.add(alpha_helix_involved_per_res)
         coiled_coils_by_model.append(list(coiled_coils))
 
-            # dimer - > >= 2 pairwise-complementary koh interaction
-            # if len(alpha_helices_involved) == 2 and len(cycle_graph) > 2:
-            #     alpha_helix_involved = tuple(sorted(set(alpha_helix_involved)))
-            #     coiled_coils.add(alpha_helix_involved)
-            #     coiled_coils_by_model.append(list(coiled_coils))
-            # elif len(alpha_helix_involved) > 2:
-            #     alpha_helix_involved = tuple(sorted(set(alpha_helix_involved)))
-            #     coiled_coils.add(alpha_helix_involved)
-            #     coiled_coils_by_model.append(list(coiled_coils))
-
 
     return {'coiled_coils_by_model': coiled_coils_by_model}
 

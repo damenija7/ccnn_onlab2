@@ -82,9 +82,13 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 def get_dssp_info(models, dssp_path, pdb_path):
 
-    num_residues_by_model: List[int] = [len(list(model.get_residues())) for model in models]
+
 
     dssp_by_model: List[DSSP] = [Bio.PDB.DSSP(model, pdb_path, dssp=dssp_path) for model in models]
+
+    # num_residues_by_model: List[int] = [len([ residue for residue in model.get_residues() if 'CA' in residue]) for model in models]
+    num_residues_by_model = [len(dssp) for dssp in dssp_by_model]
+
     # %%
     alpha_helices_by_model: List[List[Tuple]] = []
 
@@ -130,8 +134,8 @@ def get_dssp_info(models, dssp_path, pdb_path):
 
 
 #test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
-test_fname = '2zta.pdb'
-#test_fname = '1d7m.pdb'
+#test_fname = '2zta.pdb'
+test_fname = '1d7m.pdb'
 test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
 
 if __name__ == '__main__':
