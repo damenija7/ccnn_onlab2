@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import List, Tuple
 
 import networkx
@@ -84,18 +85,51 @@ def get_socket_data(data_struct):
         from networkx import simple_cycles
 
         graph = networkx.from_numpy_array(knob_hole_matrix, create_using=networkx.DiGraph)
-        cycles = simple_cycles(graph)
+        cycles = list(simple_cycles(graph))
+
 
         coiled_coils = set()
-        for cycle in cycles:
-            cycle = [index_to_helix_range_index[cycle_i] for cycle_i in cycle]
-            cycle = tuple(sorted(set(cycle)))
-            coiled_coils.add(cycle)
+        for cycle_graph in cycles:
 
+            alpha_helices_involved = sorted(Counter([index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph]).keys())
+
+            alpha_helix_order = np.zeros(shape=(len(alpha_helix_ranges), len(alpha_helix_ranges)))
+
+            for cycle_idx in range(len(cycle_graph)):
+                cycle_idx_next = (cycle_idx + 1) % len(cycle_graph)
+
+                cycle_idx, cycle_idx_next = cycle_graph[cycle_idx], cycle_graph[cycle_idx_next]
+
+                ah_idx, ah_idx_next = index_to_helix_range_index[cycle_idx], index_to_helix_range_index[cycle_idx_next]
+
+                alpha_helix_order[ah_idx, ah_idx_next] += 1
+
+            alpha_helix_order = np.floor((alpha_helix_order + alpha_helix_order.transpose()).sum(axis=-1) / 2).astype(np.int64)
+
+
+
+            if np.all(alpha_helix_order[alpha_helix_order > 0] >= len(alpha_helices_involved)):
+                alpha_helix_involved_per_res = tuple(sorted(alpha_helices_involved))
+                coiled_coils.add(alpha_helix_involved_per_res)
         coiled_coils_by_model.append(list(coiled_coils))
+
+            # dimer - > >= 2 pairwise-complementary koh interaction
+            # if len(alpha_helices_involved) == 2 and len(cycle_graph) > 2:
+            #     alpha_helix_involved = tuple(sorted(set(alpha_helix_involved)))
+            #     coiled_coils.add(alpha_helix_involved)
+            #     coiled_coils_by_model.append(list(coiled_coils))
+            # elif len(alpha_helix_involved) > 2:
+            #     alpha_helix_involved = tuple(sorted(set(alpha_helix_involved)))
+            #     coiled_coils.add(alpha_helix_involved)
+            #     coiled_coils_by_model.append(list(coiled_coils))
 
 
     return {'coiled_coils_by_model': coiled_coils_by_model}
+
+
+def socket_data_to_samcc(data_struct, data_socket):
+    alpha_helix_ranges_by_model: List[List[Tuple[int, int]]] = data_struct['alpha_helix_ranges_by_model']
+    socket_center_coords_by_model: List[np.ndarray] = data_struct['socket_center_coords_by_model']
 
 
 

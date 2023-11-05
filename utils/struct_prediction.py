@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import numpy as np
 from typing import Tuple, List
 import Bio
@@ -12,6 +14,10 @@ from utils.struct_prediction_twister import get_twister_data
 
 AMINO_ACID = set(['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY',
                   'HIS', 'ILE', 'LEU', 'LYS', 'MET', 'PHE', 'PRO', 'SER', 'THR', 'TRP', 'TYR', 'VAL'])
+
+
+HelixClass = namedtuple('HelixClass',
+                        ['start', 'end', 'chain', 'ap', 'cc_id'])
 
 def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, np.array]:
     pdb_parser = Bio.PDB.PDBParser()
