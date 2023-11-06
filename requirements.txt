@@ -1,17 +1,21 @@
 # bio_embeddings[all]
 
+torch
+fair-esm[esmfold]
+# OpenFold and its remaining dependency
+dllogger @ git+https://github.com/NVIDIA/dllogger.git
+# openfold @ git+https://github.com/aqlaboratory/openfold.git@4b41059694619831a7db195b7e0988fc4ff3a307
+
 yet_another_retnet
 
 
-fair-esm[esmfold]
-# OpenFold and its remaining dependency
-#dllogger @ git+https://github.com/NVIDIA/dllogger.git
-# openfold @ git+https://github.com/aqlaboratory/openfold.git@4b41059694619831a7db195b7e0988fc4ff3a307
+
 
 #samcc
 samcc-turbo
 
 transformers
+
 sentencepiece
 accelerate
 jupyter
@@ -27,8 +31,7 @@ snakeviz
 # storage
 h5py
 
-# --extra-index-url https://download.pytorch.org/whl/rocm5.4.2
-torch
+
 torchvision
 torchaudio
 

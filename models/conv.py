@@ -6,7 +6,7 @@ class ConvBasic(nn.Module):
         super().__init__()
 
         self.model = nn.Sequential(
-            nn.Conv2d(1024, 32, kernel_size=(15, 1), padding=(15//2, 0)),
+            nn.Conv2d(num_dim, 32, kernel_size=(15, 1), padding=(15//2, 0)),
             nn.ReLU(),
             nn.Dropout(0.25)
         )
