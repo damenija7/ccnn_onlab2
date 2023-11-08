@@ -66,24 +66,17 @@ class EmbeddingCacher:
         embeddings: List[Tensor] = []
 
         with h5py.File(self.cache_path, "r") as cache_file:
-            if self.stored_secs:
-                stored_secs = self.stored_secs
-            else:
-                self.stored_secs = stored_secs = set(cache_file.keys())
+            if self.stored_secs is None:
+                self.stored_secs = set(cache_file.keys())
 
-            for seq in sequences:
-                if seq not in stored_secs:
-                    #raise Exception(
-                    #    f"Sequence {seq} is not stored in {self.cache_path}!"
-                    #)
+            sequences_not_cached = [seq for seq in sequences if seq not in cache_file.keys()]
+            if len(sequences_not_cached) > 0:
                     cache_file.close()
-                    self.cache_embeddings(sequences)
-                    self.stored_secs.update(sequences)
+                    self.cache_embeddings(sequences_not_cached)
+                    self.stored_secs.update(sequences_not_cached)
                     cache_file = h5py.File(self.cache_path, "r")
 
-
-                embedding = cache_file[seq][:]
-                embeddings.append(torch.Tensor(embedding))
+            embeddings = [torch.Tensor(cache_file[seq][:]) for seq in sequences]
 
         return embeddings
 

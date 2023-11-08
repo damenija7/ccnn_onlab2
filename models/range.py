@@ -50,9 +50,15 @@ class ConvRange(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, input_dim: int = 1024, hidden_dim: int = 1024, output_dim: int = 1, num_heads: int = 8,
+    def __init__(self, input_dim: int = 1024, hidden_dim: int = 1024, output_dim: int = 1, num_heads: int = 2, num_layers: int = 2,
                  sequence_embedder: Callable = None):
         super().__init__()
+
+        if (input_dim % num_heads) != 0:
+            self.preprocess = nn.Linear(input_dim, 64*num_heads)
+            input_dim = 64*num_heads
+        else:
+            self.preprocess = lambda x : x
 
         self.input_dim, self.hidden_dim, self.output_dim, self.num_heads = input_dim, hidden_dim, output_dim, num_heads
 
@@ -65,7 +71,7 @@ class Transformer(nn.Module):
         # 3. embedding tensor to encoding
         # self.transformer = nn.Transformer(d_model=input_dim, nhead=num_heads, num_encoder_layers=3, num_decoder_layers=3, dim_feedforward=2048)
         self.decoder_layer = nn.TransformerDecoderLayer(d_model=input_dim, nhead=num_heads, dim_feedforward=1024, batch_first=True)
-        self.decoder = nn.TransformerDecoder(decoder_layer=self.decoder_layer, num_layers=6)
+        self.decoder = nn.TransformerDecoder(decoder_layer=self.decoder_layer, num_layers=3)
 
         self.class_embed = nn.Sequential(nn.Linear(input_dim, 1), nn.Sigmoid())
         self.box_embed = nn.Sequential(nn.Linear(input_dim, input_dim),
@@ -76,6 +82,11 @@ class Transformer(nn.Module):
         self.output_query =  nn.Embedding(20, input_dim)
 
     def forward(self, x, label: Optional = None):
+        if isinstance(x, list):
+            x = [self.preprocess(x_i) for x_i in x]
+        else:
+            x = self.preprocess(x)
+
         # TODO Parallel processing
         from torch.nn.utils.rnn import pad_sequence, unpad_sequence
         x_padded: torch.Tensor = pad_sequence(x, batch_first=True, padding_value=-float('inf'))
@@ -97,7 +108,7 @@ class Transformer(nn.Module):
         assert not torch.any(torch.isnan(self.output_query.weight))
 
         # account for multiheadedness
-        memory_mask = torch.cat([memory_mask] * 8)
+        memory_mask = torch.cat([memory_mask] * self.num_heads)
         tgt_mask = torch.zeros(dtype=memory_mask.dtype, device=tgt.device, size=(tgt.shape[0] * 8, tgt.shape[1], tgt.shape[1]))
         #for i in range(self.output_query.weight.shape[0]):
         #    tgt_mask[:, i, i] = -float('inf')

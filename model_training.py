@@ -73,10 +73,13 @@ def run_training(
         raise Exception(f"Couldn't load embedder '{embedder_class_path}'")
 
 
-    embedder = embedder_class()
-    embedder.to(config.Config.device )
-    embedder_type = embedder.__class__.__name__
-    print(type(embedder))
+    #embedder = embedder_class()
+    #embedder.to(config.Config.device )
+    #embedder_type = embedder.__class__.__name__
+    #print(type(embedder))
+    def emb(x):
+        raise Exception("NO EMBEDDER")
+    embedder = emb
 
     if dataset_cache is not None:
         cacher = EmbeddingCacher(sequence_embedder=embedder, cache_path=dataset_cache)
@@ -94,7 +97,7 @@ def run_training(
     in_channels = embedder.embed('AAA')[0].shape[-1]
     try:
         model = model_class(in_channels)
-    except:
+    except Exception as e:
         model = model_class()
 
     model_type = model.__class__.__name__

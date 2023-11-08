@@ -5,14 +5,26 @@ class ConvBasic(nn.Module):
     def __init__(self, num_dim: int = 1024):
         super().__init__()
 
+        kernel_siz = 31
+
         self.model = nn.Sequential(
-            nn.Conv2d(num_dim, 32, kernel_size=(15, 1), padding=(15//2, 0)),
+            nn.Conv2d(num_dim, 64, kernel_size=(kernel_siz,1), padding=(kernel_siz//2,0), padding_mode='circular'),
             nn.ReLU(),
-            nn.Dropout(0.25)
+            nn.Dropout(0.25),
+
+            nn.Conv2d(64, 32, kernel_size=(kernel_siz, 1), padding=(kernel_siz // 2, 0), padding_mode='circular'),
+            nn.ReLU(),
+            nn.Dropout(0.25),
+
+            nn.Conv2d(32, 16, kernel_size=(kernel_siz, 1), padding=(kernel_siz // 2, 0), padding_mode='circular'),
+            nn.ReLU(),
+            nn.Dropout(0.25),
+
+
         )
 
         self.classifier = nn.Sequential(
-            nn.Conv2d(32, 1, kernel_size=(15, 1), padding=(15//2, 0)),
+            nn.Conv2d(16, 1, kernel_size=(kernel_siz,1), padding=(kernel_siz//2,0), padding_mode='circular'),
             nn.Sigmoid()
         )
 

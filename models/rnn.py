@@ -10,8 +10,14 @@ from yet_another_retnet import retnet
 from torch.nn import functional as F
 
 class RetNet(nn.Module):
-    def __init__(self, in_channels: int = 1024, num_layers = 1, num_heads = 8):
+    def __init__(self, in_channels: int, num_layers = 2, num_heads = 8):
         super().__init__()
+
+        if (in_channels % 8) != 0:
+            self.preprocess = nn.Linear(in_channels, num_heads*64)
+            in_channels = num_heads * 64
+        else:
+            self.preprocess = lambda x : x
 
         self.model = retnet.RetNet(
             num_tokens=1,
@@ -42,6 +48,9 @@ class RetNet(nn.Module):
 
 
     def forward(self, x, labels = None):
+        x = self.preprocess(x)
+        x = x + self.position_enc.weight[:x.shape[0]]
+
         if self.training:
             self.put_masked_values(x, [len(x_i) for x_i in x])
 
