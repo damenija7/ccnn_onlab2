@@ -7,17 +7,14 @@ import numpy as np
 from numpy.linalg import norm
 from numpy import dot
 
-def socket_has_interaction(alpha_helix_range_1, alpha_helix_range_2, socket_center_coords, packing_cutoff = 7.0) -> bool:
+def socket_helix_interactions(alpha_helix_range_1, alpha_helix_range_2, socket_center_coords, packing_cutoff = 7.0):
     alpha_helix_coords_1 = socket_center_coords[alpha_helix_range_1[0]:alpha_helix_range_1[1]]
     alpha_helix_coords_2 = socket_center_coords[alpha_helix_range_2[0]:alpha_helix_range_2[1]]
 
     num_res_1, num_res_2 = alpha_helix_coords_1.shape[0], alpha_helix_coords_2.shape[0]
     # knob, hole matrix
-    # (i,j) -> ith res of helix 1 is knob for hole, jth res of helix 2 ?
+    # (i,j) ->
     contacts_matrix = np.zeros(shape=(num_res_1, num_res_2), dtype=np.int64)
-
-    num_contacts_1 = np.zeros(shape=(num_res_1,), dtype=np.int64)
-    num_contacts_2 = np.zeros(shape=(num_res_2,), dtype=np.int64)
 
     for i in range(alpha_helix_coords_1.shape[0]):
         for j in range(alpha_helix_coords_2.shape[0]):
@@ -29,27 +26,36 @@ def socket_has_interaction(alpha_helix_range_1, alpha_helix_range_2, socket_cent
     is_knob_1 = contacts_matrix.sum(axis=-1) >= 4
     is_knob_2 = contacts_matrix.sum(axis=0) >= 4
 
-    knob_1_hole_2 = np.zeros_like(contacts_matrix, dtype=np.int64)
+    knob_1_hole_2 = np.zeros_like(contacts_matrix, dtype=np.bool_)
     knob_2_hole_1 = np.transpose(knob_1_hole_2).copy()
 
-    if np.any(is_knob_1):
-        knob_1_hole_2[is_knob_1] = contacts_matrix[is_knob_1] > 0
-    if np.any(is_knob_2):
-        knob_2_hole_1[is_knob_2] = np.transpose(contacts_matrix[:, is_knob_2] > 0)
+    for knob_1 in np.flatnonzero(is_knob_1):
+        knob_1_coord = alpha_helix_coords_1[knob_1]
+        hole_2_indices = np.flatnonzero(contacts_matrix[knob_1] > 0)
+        hole_2_coords = alpha_helix_coords_2[hole_2_indices]
+
+        distances = np.linalg.norm(hole_2_coords[:, :] - knob_1_coord[None, :], axis=-1)
+        closest_4_indices = np.argsort(distances)[:4]
+
+        knob_1_hole_2[knob_1, hole_2_indices[closest_4_indices]] = True
+
+
+    for knob_2 in np.flatnonzero(is_knob_2):
+        knob_2_coord = alpha_helix_coords_2[knob_2]
+        hole_1_indices = np.flatnonzero(contacts_matrix[:, knob_2] > 0)
+        hole_1_coords = alpha_helix_coords_1[hole_1_indices]
+
+        distances = np.linalg.norm(hole_1_coords[:, :] - knob_2_coord[None, :], axis=-1)
+        closest_4_indices = np.argsort(distances)[:4]
+
+        knob_2_hole_1[knob_2, hole_1_indices[closest_4_indices]] = True
 
 
 
     return knob_1_hole_2, knob_2_hole_1
 
-
-def fill_is_knob_1(alpha_helix_coords_1, alpha_helix_coords_2, is_knob_1, is_knob_2, packing_cutoff):
-    for res_i in range(len(is_knob_1)):
-        contacts = np.zeros_like(is_knob_2)
-        for res_j in range(len(is_knob_2)):
-            dist = norm(alpha_helix_coords_1[res_i] - alpha_helix_coords_2[res_j])
-            contacts[res_j] = dist <= packing_cutoff
-
-        is_knob_1[res_i] = contacts.sum() >= 4
+def to_visit(current_path, node, visited, visited_path, visited_chain) -> bool:
+    return tuple(current_path + [node]) not in visited_path
 
 
 def get_socket_data(data_struct):
@@ -77,77 +83,77 @@ def get_socket_data(data_struct):
             alpha_helix_range_i = alpha_helix_ranges[i]
             for j in range(i+1, len(alpha_helix_ranges)):
                 alpha_helix_range_j = alpha_helix_ranges[j]
-                knob_1_hole_2, knob_2_hole_1 = socket_has_interaction(alpha_helix_range_i, alpha_helix_range_j, socket_center_coords)
+                knob_1_hole_2, knob_2_hole_1 = socket_helix_interactions(alpha_helix_range_i, alpha_helix_range_j, socket_center_coords)
 
-                knob_hole_matrix[alpha_helix_range_i[0]:alpha_helix_range_i[1], alpha_helix_range_j[0]:alpha_helix_range_j[1]] = knob_1_hole_2
-                knob_hole_matrix[alpha_helix_range_j[0]:alpha_helix_range_j[1], alpha_helix_range_i[0]:alpha_helix_range_i[1]] = knob_2_hole_1
+                knob_hole_matrix[alpha_helix_range_i[0]:alpha_helix_range_i[1], alpha_helix_range_j[0]:alpha_helix_range_j[1]] |= knob_1_hole_2
+                knob_hole_matrix[alpha_helix_range_j[0]:alpha_helix_range_j[1], alpha_helix_range_i[0]:alpha_helix_range_i[1]] |= knob_2_hole_1
 
         # find cycles
         from networkx import simple_cycles
 
-        #graph = networkx.from_numpy_array(knob_hole_matrix, create_using=networkx.DiGraph)
-        ##traversal_result = list(simple_cycles(graph))
-        #traversal_result = list()
-
-        edge_visited_mat = np.zeros_like(knob_hole_matrix, dtype=np.bool_)
-
-        def dfs(start_node):
-            cycles = set()
-            cycles_chain = set()
-            visited = set()
-            visited_chain = set()
-            s = [start_node]
-            path = []
-            path_chain = []
-
-            while len(s) != 0:
-                node = s.pop()
-                node_chain = index_to_helix_range_index[node]
-                if node not in visited:
-                    # do shit
-                    #
-
-                    visited.add(node)
-                    visited_chain.add(node_chain)
-
-                    path.append(node)
-                    path_chain.append(node_chain)
-                    num_neighbors_added = 0
-                    for neighbor in np.flatnonzero(knob_hole_matrix[node]):
-                        neighbor_chain = index_to_helix_range_index[neighbor]
-                        if neighbor not in visited:
-                            s.append(neighbor)
-                            num_neighbors_added += 1
-
-                        if neighbor in path:
-                            # neighbor creates cycle
-                            cycles.add(tuple(path[path.index(neighbor):]))
-
-                        if neighbor_chain in path_chain:
-                            cycles_chain.add(tuple(path[path_chain.index(neighbor_chain):]))
-
-                    if num_neighbors_added == 0:
-                        path.pop()
-                        path_chain.pop()
-
-            return cycles, cycles_chain, visited
-
-        cycles, cycles_chain = set(), set()
-        visited = set()
-
-        indices_visit = np.flatnonzero(knob_hole_matrix.sum(axis=-1))
-        for idx_i in indices_visit:
-            if idx_i in visited:
-                continue
-
-            cycles_i, cycles_chain_i, visited_i = dfs(idx_i)
-
-            visited |= visited_i
-            cycles |= cycles_i
-            cycles_chain |= cycles_chain_i
+        graph = networkx.from_numpy_array(knob_hole_matrix, create_using=networkx.DiGraph)
+        traversal_result = list(simple_cycles(graph))
 
 
-        traversal_result = cycles_chain
+        # def dfs(start_node):
+        #     cycles = set()
+        #     cycles_chain = set()
+        #     visited = set()
+        #     visited_chain = set()
+        #     visited_path = set()
+        #     s = [start_node]
+        #     path = []
+        #     path_chain = []
+        #
+        #     while len(s) != 0:
+        #         node = s.pop()
+        #         node_chain = index_to_helix_range_index[node]
+        #         if to_visit(path, node, visited, visited_path, visited_chain):
+        #             # do shit
+        #             #
+        #             path.append(node)
+        #
+        #             visited.add(node)
+        #             visited_chain.add(node_chain)
+        #             visited_path.add(tuple(path))
+        #
+        #             path_chain.append(node_chain)
+        #             num_neighbors_added = 0
+        #             for neighbor in np.flatnonzero(knob_hole_matrix[node]):
+        #                 neighbor_chain = index_to_helix_range_index[neighbor]
+        #                 if to_visit(path, neighbor, visited, visited_path, visited_chain):
+        #                     s.append(neighbor)
+        #                     num_neighbors_added += 1
+        #
+        #                 if neighbor in path:
+        #                     # neighbor creates cycle
+        #                     cycles.add(tuple([*path[path.index(neighbor):], neighbor]))
+        #
+        #                 if neighbor_chain in path_chain:
+        #                     cycles_chain.add(tuple([*path[path_chain.index(neighbor_chain):], neighbor]))
+        #
+        #             if num_neighbors_added == 0:
+        #                 path.pop()
+        #                 path_chain.pop()
+        #
+        #     return cycles, cycles_chain, visited, visited_path
+        #
+        # cycles, cycles_chain = set(), set()
+        # visited = set()
+        # visited_path = set()
+        #
+        # indices_visit = np.flatnonzero(knob_hole_matrix.sum(axis=-1))
+        # for idx_i in indices_visit:
+        #
+        #     cycles_i, cycles_chain_i, visited_i, visited_path_i = dfs(idx_i)
+        #
+        #     visited |= visited_i
+        #     visited_path |= visited_path_i
+        #     cycles |= cycles_i
+        #     cycles_chain |= cycles_chain_i
+        #
+        #
+        # traversal_result = cycles_chain
 
         coiled_coils = set()
 
