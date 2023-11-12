@@ -4,7 +4,6 @@ import numpy as np
 from typing import Tuple, List
 import Bio
 from Bio.PDB.Model import Model
-from Bio.PDB.Atom import Atom
 from Bio.PDB.DSSP import DSSP
 from Bio.PDB.Residue import Residue
 
@@ -128,3 +127,5 @@ if __name__ == '__main__':
     data_struct = get_data_struct(test_fname, test_dssp_path)
     data_socket = get_socket_data(data_struct)
     data_twister = get_twister_data(data_struct, data_socket)
+
+

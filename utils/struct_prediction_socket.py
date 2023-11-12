@@ -7,6 +7,9 @@ import numpy as np
 from numpy.linalg import norm
 from numpy import dot
 
+from utils.struct_prediction_helper import get_parallel_state_by_chain
+
+
 def socket_helix_interactions(alpha_helix_range_1, alpha_helix_range_2, socket_center_coords, packing_cutoff = 7.0):
     alpha_helix_coords_1 = socket_center_coords[alpha_helix_range_1[0]:alpha_helix_range_1[1]]
     alpha_helix_coords_2 = socket_center_coords[alpha_helix_range_2[0]:alpha_helix_range_2[1]]
@@ -63,11 +66,13 @@ def get_socket_data(data_struct):
     # alpha_carbon_coords_by_model
     alpha_helix_ranges_by_model: List[List[Tuple[int, int]]] = data_struct['alpha_helix_ranges_by_model']
     socket_center_coords_by_model: List[np.ndarray] = data_struct['socket_center_coords_by_model']
+    alpha_carbon_coords_by_model: List[np.ndarray] = data_struct['alpha_carbon_coords_by_model']
 
     coiled_coils_by_model = []
 
     for model_idx, alpha_helix_ranges in enumerate(alpha_helix_ranges_by_model):
         socket_center_coords = socket_center_coords_by_model[model_idx]
+        alpha_carbon_coords = alpha_carbon_coords_by_model[model_idx]
         num_residues = socket_center_coords.shape[0]
         has_interaction = np.zeros(shape=(len(alpha_helix_ranges), len(alpha_helix_ranges)), dtype=np.bool_)
 
@@ -159,31 +164,73 @@ def get_socket_data(data_struct):
 
         num_alpha_helices_involved = [len(Counter([index_to_helix_range_index[cycle_i] for cycle_i in cycle]).keys()) for cycle in traversal_result]
         traversal_result = [x[1] for x in sorted(enumerate(traversal_result), key=lambda i: -num_alpha_helices_involved[i[0]])]
+
+        # knob_order = np.zeros(shape=(num_residues, num_residues), dtype=np.bool_)
+        assignments = ['0' for _ in range(num_residues)]
+
+        num_pairwise_interactions_alpha_helix = np.zeros(shape=(len(alpha_helix_ranges), len(alpha_helix_ranges)), dtype=np.int64)
+        for cycle_graph in [res for res in traversal_result if len(res) == 2]:
+            ah_1, ah_2 = [index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph]
+            num_pairwise_interactions_alpha_helix[ah_1, ah_2] += 1
+            num_pairwise_interactions_alpha_helix[ah_2, ah_1] += 1
+
+
+
         for cycle_graph in traversal_result:
 
-            alpha_helices_involved = sorted(Counter([index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph]).keys())
+            alpha_helices_involved = frozenset(index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph)
 
-            traversal = np.zeros(shape=(len(alpha_helix_ranges), len(alpha_helix_ranges)))
+            knob_order = len(cycle_graph)
+
 
             for cycle_idx in range(len(cycle_graph)):
                 cycle_idx_next = (cycle_idx + 1) % len(cycle_graph)
 
                 cycle_idx, cycle_idx_next = cycle_graph[cycle_idx], cycle_graph[cycle_idx_next]
-
                 ah_idx, ah_idx_next = index_to_helix_range_index[cycle_idx], index_to_helix_range_index[cycle_idx_next]
 
-                traversal[ah_idx, ah_idx_next] += 1
+                next_antiparallel = orientation = get_parallel_state_by_chain(alpha_carbon_coords=alpha_carbon_coords, alpha_helix_ranges=[alpha_helix_ranges[ah_idx], alpha_helix_ranges[ah_idx_next]])[-1]
+                n = np.flatnonzero(np.flatnonzero(knob_hole_matrix[cycle_idx]) == cycle_idx_next)[0] + 1
 
-            alpha_helix_order = np.floor((traversal + traversal.transpose()).sum(axis=-1) / 2).astype(np.int64)
+                if knob_order == 2 and num_pairwise_interactions_alpha_helix[ah_idx, ah_idx_next] < 2:
+                    continue
+
+
+                assignment = assignments[cycle_idx]
+                # Assignment of heptad register
+                if assignment == '0' and n in [2,3]:
+                    # K = 2, N > 2
+                    if knob_order == 2 and alpha_helices_involved <= coiled_coils:
+                        if n == 2:
+                            if orientation > 0:
+                                assignment='g'
+                            else:
+                                assignment='e'
+                        elif n == 3:
+                            if orientation > 0 :
+                                assignment = 'e'
+                            else:
+                                assignment = 'g'
+                    else:
+                        if n == 2:
+                            if orientation > 0:
+                                assignment = 'd'
+                            else:
+                                assignment = 'a'
+                        elif n == 3:
+                            if orientation > 0:
+                                assignment = 'a'
+                            else:
+                                assignment = 'd'
+                    assignments[cycle_idx] = assignment
 
 
 
-            if ( len(alpha_helices_involved) <= 2 and np.all(alpha_helix_order[alpha_helix_order > 0] >= 2) ) \
-                    or len(alpha_helices_involved) > 3:
-                alpha_helix_involved_per_res = frozenset(alpha_helices_involved)
-                if not any(alpha_helix_involved_per_res <= cc for cc in coiled_coils):
-                    coiled_coils.add(alpha_helix_involved_per_res)
-        coiled_coils_by_model.append([list(cc) for cc in coiled_coils])
+
+            if not any(alpha_helices_involved <= cc for cc in coiled_coils):
+                coiled_coils.add(alpha_helices_involved)
+
+        coiled_coils_by_model.append([sorted(cc) for cc in coiled_coils])
 
 
     return {'coiled_coils_by_model': coiled_coils_by_model}

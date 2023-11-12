@@ -5,6 +5,8 @@ import torch
 from numpy import dot
 from numpy.linalg import norm
 
+from utils.struct_prediction_helper import get_parallel_state_by_chain
+
 
 def new_dihedral(p0, p1, p2, p3):
     """Praxeolitic formula
@@ -129,17 +131,6 @@ def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_hel
     O_by_chain = []
     for (helix_start, helix_end) in alpha_helix_ranges:
         O_by_chain.append(O[helix_start, helix_end])
-
-
-def get_parallel_state_by_chain(alpha_carbon_coords, alpha_helix_ranges):
-    parallel_state_by_chain = np.ones_like(alpha_helix_ranges[:, 0])
-    first_chain_dir = alpha_carbon_coords[alpha_helix_ranges[0, 1] - 1] - alpha_carbon_coords[alpha_helix_ranges[0, 0]]
-    for i, (ah_start, ah_end) in enumerate(alpha_helix_ranges[1:]):
-        i = i + 1
-        chain_dir = alpha_carbon_coords[ah_end - 1] - alpha_carbon_coords[ah_start]
-
-        parallel_state_by_chain[i] = 1 if np.dot(first_chain_dir, chain_dir) >= 0 else -1
-    return parallel_state_by_chain
 
 
 def get_prev_next(mat):
