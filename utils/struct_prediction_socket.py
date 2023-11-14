@@ -177,8 +177,11 @@ def get_socket_data(data_struct):
 
 
         for cycle_graph in traversal_result:
+            assignments_tmp = assignments.copy()
 
+            cycle_graph_helices = [index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph]
             alpha_helices_involved = frozenset(index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph)
+            N = len(alpha_helices_involved)
 
             knob_order = len(cycle_graph)
 
@@ -222,13 +225,15 @@ def get_socket_data(data_struct):
                                 assignment = 'a'
                             else:
                                 assignment = 'd'
-                    assignments[cycle_idx] = assignment
+                    assignments_tmp[cycle_idx] = assignment
+
 
 
 
 
             if not any(alpha_helices_involved <= cc for cc in coiled_coils):
                 coiled_coils.add(alpha_helices_involved)
+                assignments = assignments_tmp
 
         coiled_coils_by_model.append([sorted(cc) for cc in coiled_coils])
 
