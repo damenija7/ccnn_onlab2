@@ -43,9 +43,9 @@ class StructPred(nn.Module):
             out_path = f"cache/{sequence}.samcc"
 
             if not os.path.exists(pdb_path):
-                output = self.model.infer_pdb(sequence)
+                pdb_oudput = self.model.infer_pdb(sequence)
                 with open(pdb_path, "w") as f:
-                    f.write(output)
+                    f.write(pdb_oudput)
 
 
             output = self.get_output(sequence=sequence, samcc_path = out_path)
