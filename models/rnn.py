@@ -10,7 +10,7 @@ from yet_another_retnet import retnet
 from torch.nn import functional as F
 
 class RetNet(nn.Module):
-    def __init__(self, in_channels: int, num_layers = 2, num_heads = 8):
+    def __init__(self, in_channels: int, num_layers = 1, num_heads = 8):
         super().__init__()
 
         if (in_channels % 8) != 0:
