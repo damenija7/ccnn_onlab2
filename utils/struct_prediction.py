@@ -3,6 +3,8 @@ from collections import namedtuple
 import numpy as np
 from typing import Tuple, List
 import Bio
+import pydssp
+import torch
 from Bio.PDB.Model import Model
 from Bio.PDB.DSSP import DSSP
 from Bio.PDB.Residue import Residue
@@ -17,6 +19,9 @@ AMINO_ACID = set(['ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY',
 
 HelixClass = namedtuple('HelixClass',
                         ['start', 'end', 'chain', 'ap', 'cc_id'])
+
+
+
 
 def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, np.array]:
     pdb_parser = Bio.PDB.PDBParser()
@@ -35,7 +40,7 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 
 
-    alpha_helix_ranges_by_model = get_dssp_info(models, dssp_path, pdb_path)
+    alpha_helix_ranges_by_model = get_dssp_info_alt(models, dssp_path, pdb_path)
     alpha_carbon_coords_by_model = [np.stack([(res['CA']).coord for res in residues if 'CA' in res]) for residues in residues_by_model]
     socket_center_coords_by_model = []
 
@@ -77,6 +82,37 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 
 
+def get_dssp_info_alt(models, dssp_path, pdb_path):
+
+
+    dssp_by_model = [pydssp.assign(torch.tensor(pydssp.read_pdbtext(open(pdb_path, 'r').read())))]
+
+
+    num_residues_by_model = [len(dssp) for dssp in dssp_by_model]
+
+    # %%
+    alpha_helices_by_model: List[List[Tuple]] = []
+
+    for dssp in dssp_by_model:
+        current_alpha_helix_start = None
+        alpha_helices = []
+        for res_idx, res in enumerate(dssp):
+            # is alpha helix
+            if res == 'H':
+                if current_alpha_helix_start is None:
+                    current_alpha_helix_start = res_idx
+            else:
+                if current_alpha_helix_start is not None:
+                    alpha_helices.append((current_alpha_helix_start, res_idx))
+                    current_alpha_helix_start = None
+
+        if current_alpha_helix_start is not None:
+            alpha_helices.append((current_alpha_helix_start, len(dssp)))
+
+        alpha_helices_by_model.append(alpha_helices)
+    # %%
+
+    return alpha_helices_by_model
 
 
 def get_dssp_info(models, dssp_path, pdb_path):

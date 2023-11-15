@@ -1,4 +1,5 @@
 import os.path
+from hashlib import sha256
 from typing import List, Tuple
 
 import Bio
@@ -24,6 +25,8 @@ class StructPred(nn.Module):
         )
         self.model.eval()
 
+        self.device = self.model.device
+
         self.dssp_path =  'utils/dssp-x86_64.AppImage'
         self.socket_path = ''
         self.sc = SamCC(bin_paths={'dssp':self.dssp_path, 'socket':self.socket_path})
@@ -31,16 +34,22 @@ class StructPred(nn.Module):
         if not os.path.isdir('cache'):
             os.makedirs('cache')
 
+    def to(self, device):
+        super().to(device)
+        self.device = device
+        self.model = self.model.to(device)
 
-    def forward(self, sequences: List[str]):
+
+    def forward(self, sequences: List[str], preds = None):
         if isinstance(sequences, str):
             sequences = [sequences]
 
         outputs = []
 
         for sequence in sequences:
-            pdb_path = f"cache/{sequence}.pdb"
-            out_path = f"cache/{sequence}.samcc"
+            hashed = sha256(sequence.encode()).hexdigest()
+            pdb_path = f"cache/{hashed}.pdb"
+            out_path = f"cache/{hashed}.samcc"
 
             if not os.path.exists(pdb_path):
                 pdb_oudput = self.model.infer_pdb(sequence)
@@ -48,14 +57,14 @@ class StructPred(nn.Module):
                     f.write(pdb_oudput)
 
 
-            output = self.get_output(sequence=sequence, samcc_path = out_path)
+            output = self.get_output(pdb_path = pdb_path, samcc_path = out_path)
             outputs.append(output)
 
-        return outputs
+        res = torch.nn.utils.rnn.pad_sequence(outputs, batch_first=True).to(self.device).type(torch.float)
+        return res, torch.tensor([0.0], requires_grad=True)
 
 
-    def get_output(self, sequence, samcc_path):
-        pdb_path = f"cache/{sequence}.pdb"
+    def get_output(self, pdb_path, samcc_path):
 
         data_struct = get_data_struct(pdb_path, self.dssp_path)
         data_socket = get_socket_data(data_struct)
