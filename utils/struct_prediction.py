@@ -44,6 +44,7 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 
     alpha_helix_ranges_by_model = get_dssp_info_alt(models, dssp_path, pdb_path)
+    # alpha_carbon_coords_by_model = [np.stack([(res['CA'] if not res['CA'].is_disordered() else res['CA'].disordered_get_list()[0]).coord for res in residues if 'CA' in res]) for residues in residues_by_model]
     alpha_carbon_coords_by_model = [np.stack([(res['CA']).coord for res in residues if 'CA' in res]) for residues in residues_by_model]
     socket_center_coords_by_model = []
 
@@ -157,14 +158,16 @@ def get_dssp_info(models, dssp_path, pdb_path):
 
 
 #test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
-#test_fname = '2zta.pdb'
+test_fname = '2zta.pdb'
 # test_fname = '1d7m.pdb'
-test_fname='3wiw.pdb'
+#test_fname='1fu1.pdb'
 test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
 
 if __name__ == '__main__':
     data_struct = get_data_struct(test_fname, test_dssp_path)
     data_socket = get_socket_data(data_struct)
     data_twister = get_twister_data(data_struct, data_socket)
+
+    print(data_twister)
 
 

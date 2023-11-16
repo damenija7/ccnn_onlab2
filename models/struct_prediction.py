@@ -72,6 +72,9 @@ class StructPred(nn.Module):
         data_socket = get_socket_data(data_struct)
         data_twister = get_twister_data(data_struct, data_socket)
 
+        cc_mask = data_socket['cc_mask_by_model'][0]
+        cc_mask |= data_twister['cc_mask_by_model'][0]
+
         warnings.resetwarnings()
 
         return data_twister

@@ -4,24 +4,31 @@ from typing import List, Tuple
 
 import networkx
 import numpy as np
+import torch
 from numpy.linalg import norm
 from numpy import dot
 
 from utils.struct_prediction_helper import get_parallel_state_by_chain
 
 
-def socket_helix_interactions(alpha_helix_range_1, alpha_helix_range_2, socket_center_coords, packing_cutoff = 7.0):
-    alpha_helix_coords_1 = socket_center_coords[alpha_helix_range_1[0]:alpha_helix_range_1[1]]
-    alpha_helix_coords_2 = socket_center_coords[alpha_helix_range_2[0]:alpha_helix_range_2[1]]
+def socket_helix_interactions(alpha_helix_range_1, alpha_helix_range_2, socket_center_coords, packing_cutoff = 7.0, extend=False):
+    if not extend:
+        alpha_helix_coords_1 = socket_center_coords[alpha_helix_range_1[0]:alpha_helix_range_1[1]]
+        alpha_helix_coords_2 = socket_center_coords[alpha_helix_range_2[0]:alpha_helix_range_2[1]]
+    else:
+        alpha_helix_coords_1 = socket_center_coords[alpha_helix_range_1[0]-1:alpha_helix_range_1[1]+1]
+        alpha_helix_coords_2 = socket_center_coords[alpha_helix_range_2[0]-1:alpha_helix_range_2[1]+1]
 
     num_res_1, num_res_2 = alpha_helix_coords_1.shape[0], alpha_helix_coords_2.shape[0]
     # knob, hole matrix
     # (i,j) ->
     contacts_matrix = np.zeros(shape=(num_res_1, num_res_2), dtype=np.int64)
 
-    for i in range(alpha_helix_coords_1.shape[0]):
-        for j in range(alpha_helix_coords_2.shape[0]):
+    for i in range(num_res_1):
+        for j in range(num_res_2):
             dist = norm(alpha_helix_coords_1[i] - alpha_helix_coords_2[j])
+            if dist == 0:
+                continue
             if dist <= packing_cutoff:
                 contacts_matrix[i,j] += 1
 
@@ -54,8 +61,10 @@ def socket_helix_interactions(alpha_helix_range_1, alpha_helix_range_2, socket_c
         knob_2_hole_1[knob_2, hole_1_indices[closest_4_indices]] = True
 
 
+    if not extend:
+        return knob_1_hole_2, knob_2_hole_1
 
-    return knob_1_hole_2, knob_2_hole_1
+    return knob_1_hole_2[1:-1,1:-1], knob_2_hole_1[1:-1, 1:-1]
 
 def to_visit(current_path, node, visited, visited_path, visited_chain) -> bool:
     return tuple(current_path + [node]) not in visited_path
@@ -69,6 +78,8 @@ def get_socket_data(data_struct):
     alpha_carbon_coords_by_model: List[np.ndarray] = data_struct['alpha_carbon_coords_by_model']
 
     coiled_coils_by_model = []
+    assignments_by_model = []
+    cc_mask_by_model = []
 
     for model_idx, alpha_helix_ranges in enumerate(alpha_helix_ranges_by_model):
         socket_center_coords = socket_center_coords_by_model[model_idx]
@@ -82,13 +93,22 @@ def get_socket_data(data_struct):
         for helix_idx, (helix_range_start, helix_range_end) in enumerate(alpha_helix_ranges):
             index_to_helix_range_index[helix_range_start:helix_range_end] = helix_idx
 
+        ah_mask = np.zeros(shape=(num_residues,), dtype=np.bool_)
+        for ah_start, ah_end in alpha_helix_ranges:
+            ah_mask[ah_start:ah_end] = True
 
+        # knob_1_hole_2, knob_2_hole_1 = socket_helix_interactions((0, num_residues), (0, num_residues), socket_center_coords)
+        # knob_hole_matrix |= knob_1_hole_2
+        # knob_hole_matrix |= knob_2_hole_1
+        # np.fill_diagonal(knob_hole_matrix, False)
+        # knob_hole_matrix[~ah_mask] = False
+        # knob_hole_matrix[:, ~ah_mask] = False
 
         for i in range(len(alpha_helix_ranges)-1):
             alpha_helix_range_i = alpha_helix_ranges[i]
             for j in range(i+1, len(alpha_helix_ranges)):
                 alpha_helix_range_j = alpha_helix_ranges[j]
-                knob_1_hole_2, knob_2_hole_1 = socket_helix_interactions(alpha_helix_range_i, alpha_helix_range_j, socket_center_coords)
+                knob_1_hole_2, knob_2_hole_1 = socket_helix_interactions(alpha_helix_range_i, alpha_helix_range_j, socket_center_coords, extend=True)
 
                 knob_hole_matrix[alpha_helix_range_i[0]:alpha_helix_range_i[1], alpha_helix_range_j[0]:alpha_helix_range_j[1]] |= knob_1_hole_2
                 knob_hole_matrix[alpha_helix_range_j[0]:alpha_helix_range_j[1], alpha_helix_range_i[0]:alpha_helix_range_i[1]] |= knob_2_hole_1
@@ -227,6 +247,50 @@ def get_socket_data(data_struct):
                                 assignment = 'd'
                     assignments_tmp[cycle_idx] = assignment
 
+                    if orientation > 0:
+                        prev_prev_prev = cycle_idx - 3
+                        prev_prev = cycle_idx - 2
+                        prev = cycle_idx - 1
+                        nex = cycle_idx + 1
+                        nex_nex = cycle_idx + 2
+                        nex_nex_nex = cycle_idx + 3
+                    else:
+                        prev_prev_prev = cycle_idx + 3
+                        prev_prev = cycle_idx + 2
+                        prev = cycle_idx + 1
+                        nex = cycle_idx - 1
+                        nex_nex = cycle_idx - 2
+                        nex_nex_nex = cycle_idx - 3
+
+                    if assignment == 'a':
+                        try:
+                            assignments_tmp[nex] = 'b'
+                            assignments_tmp[nex_nex] = 'c'
+                        except:
+                            pass
+                    elif assignment == 'd':
+                        try:
+                            assignments_tmp[nex] = 'e'
+                            assignments_tmp[nex_nex] = 'f'
+                            assignments_tmp[nex_nex_nex] = 'g'
+                        except:
+                            pass
+                    elif assignment == 'e':
+                        try:
+                            assignments_tmp[prev] = 'd'
+                            assignments_tmp[nex] = 'f'
+                            assignments_tmp[nex_nex] = 'g'
+                        except:
+                            pass
+                    elif assignment == 'g':
+                        try:
+                            assignments_tmp[prev] = 'f'
+                            assignments_tmp[prev_prev] = 'e'
+                            assignments_tmp[prev_prev_prev] = 'd'
+                        except:
+                            pass
+
+
 
             assignments = assignments_tmp
             if not any(alpha_helices_involved <= cc for cc in coiled_coils):
@@ -234,9 +298,11 @@ def get_socket_data(data_struct):
 
 
         coiled_coils_by_model.append([sorted(cc) for cc in coiled_coils])
-
-
-    return {'coiled_coils_by_model': coiled_coils_by_model}
+        assignments_by_model.append(assignments)
+        cc_mask_by_model.append(torch.tensor([True if assignment != '0' else False for assignment in assignments], dtype=torch.bool))
+    return {'cc_by_model': coiled_coils_by_model,
+            'cc_mask_by_model': cc_mask_by_model,
+            'residue_assignment_by_model': assignments_by_model}
 
 
 def socket_data_to_samcc(data_struct, data_socket):

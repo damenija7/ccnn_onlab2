@@ -42,40 +42,44 @@ def new_dihedral(p0, p1, p2, p3):
 def get_twister_data(data_struct, data_socket):
     alpha_helix_ranges_by_model = data_struct['alpha_helix_ranges_by_model']
     alpha_carbon_coords_by_model = data_struct['alpha_carbon_coords_by_model']
-    coiled_coils_by_model = data_socket['coiled_coils_by_model']
+    coiled_coils_by_model = data_socket['cc_by_model']
 
-    results = []
+    results = {}
 
 
     for model_idx, (alpha_helix_ranges, coiled_coils, alpha_carbon_coords) in enumerate(zip(alpha_helix_ranges_by_model, coiled_coils_by_model, alpha_carbon_coords_by_model)):
         num_residues = alpha_carbon_coords.shape[0]
 
-        model_mask = torch.zeros(size=(num_residues,), dtype=torch.bool)
+        cc_mask = torch.zeros(size=(num_residues,), dtype=torch.bool)
+        residue_assignment = ['0' for _ in range(num_residues)]
 
         for coiled_coil in coiled_coils:
-            cc_mask = np.zeros(shape=(num_residues,), dtype=np.bool_)
+            ah_mask = np.zeros(shape=(num_residues,), dtype=np.bool_)
             cc_alpha_helix_ranges = []
             for alpha_helix_idx in coiled_coil:
                 alpha_helix_range = alpha_helix_ranges[alpha_helix_idx]
-                cc_mask[alpha_helix_range[0]:alpha_helix_range[1]] = True
+                ah_mask[alpha_helix_range[0]:alpha_helix_range[1]] = True
                 cc_alpha_helix_ranges.append(alpha_helix_range)
 
-            twister_dat = twister_main(alpha_carbon_coords, cc_mask, cc_alpha_helix_ranges)
-            model_mask |= twister_dat['cc_mask']
+            twister_dat = twister_main(alpha_carbon_coords, ah_mask, cc_alpha_helix_ranges)
+            cc_mask |= twister_dat['cc_mask']
 
-        results.append(model_mask)
+            for idx, res in enumerate(twister_dat["residue_assignment"]):
+                if res != '0' and residue_assignment[idx] == '0':
+                    residue_assignment[idx] = res
+
+        results.setdefault('cc_mask_by_model', []).append(cc_mask)
+        results.setdefault('residue_assignment_by_model', []).append(residue_assignment)
 
 
 
 
-    return results[0]
+    return results
 
 
-def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_helix_ranges: List[Tuple[int, int]]) -> np.ndarray:
+def twister_main(alpha_carbon_coords: np.ndarray, alpha_helix_mask: np.ndarray, alpha_helix_ranges: List[Tuple[int, int]]) -> np.ndarray:
     num_residues = len(alpha_carbon_coords)
 
-
-    alpha_helix_mask = cc_mask
     alpha_helix_ranges = np.array(alpha_helix_ranges, dtype=np.int64)
     parallel_state_by_chain = get_parallel_state_by_chain(alpha_carbon_coords, alpha_helix_ranges)
 
