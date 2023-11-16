@@ -90,7 +90,7 @@ def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_hel
 
     O_by_chain = [O[start:end] if parallel_state >= 0 else O[start:end][::-1] for parallel_state, (start, end) in zip(parallel_state_by_chain, alpha_helix_ranges)]
     C, C_num_chains = get_C(O, alpha_carbon_coords, alpha_helix_ranges, parallel_state_by_chain)
-
+    C_prev, C_next = get_prev_next(C)
     O_prev, O_next = get_prev_next(O)
 
     # alpha helical phase yield per residue
@@ -118,7 +118,8 @@ def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_hel
     cc_rise = np.zeros_like(C[:, 0])
     cc_rise[1:-1] = (norm(C[1:-1] - C[0:-2], axis=-1) + norm(C[2:] - C[1:-1], axis=-1)) / 2.0
 
-    alpha = get_crick_phases(A=A, C=C, O=O, O_next=O_next, alpha_helix_mask=alpha_helix_mask, alpha_helix_ranges=alpha_helix_ranges)
+    alpha = get_crick_phases(A=A, C=C, C_next=C_next, C_prev=C_prev, O=O, O_next=O_next, alpha_helix_mask=alpha_helix_mask, alpha_helix_ranges=alpha_helix_ranges,
+                             parallel_state_by_chain=parallel_state_by_chain)
     residue_assignment = get_residue_assignments(alpha)
 
     return {'cc_mask': torch.tensor([0 if assignment == '0' else 1 for assignment in residue_assignment], dtype=torch.bool),
@@ -163,7 +164,7 @@ def get_residue_assignments(alpha):
     while res_idx < len(alpha) - 1:
         res_idx_incr = 1
 
-        alpha_prev, alpha_curr, alpha_next = alpha[res_idx-1], alpha[res_idx], alpha[res_idx] + 1
+        alpha_prev, alpha_curr, alpha_next = alpha[res_idx-1], alpha[res_idx], alpha[res_idx+1]
 
         assignment = '0'
         if alpha_prev < 0 and alpha_curr > 0 and abs(alpha_prev) > abs(alpha_curr):
@@ -184,6 +185,7 @@ def get_residue_assignments(alpha):
         elif assignment == 'd':
             res_idx_incr = 4
             try:
+                residue_assignment[res_idx] = assignment
                 residue_assignment[res_idx + 1] = 'e'
                 residue_assignment[res_idx + 2] = 'f'
                 residue_assignment[res_idx + 3] = 'g'
@@ -254,35 +256,41 @@ def get_crick_phases_alt(A, C, O, O_next, alpha_helix_mask, alpha_helix_ranges):
 
 
 
-def get_crick_phases(A, C, O, O_next, alpha_helix_mask, alpha_helix_ranges):
+def get_crick_phases(A, C, C_next, C_prev, O, O_next, alpha_helix_mask, alpha_helix_ranges, parallel_state_by_chain):
 
     # crick phase
     # Angle between (O_n -> C_n) and O_n -> A_n
     crick_first = np.zeros_like(O)
     crick_second = np.zeros_like(O)
     mixed = np.zeros_like(O[:,0])
-    for ah_start, ah_end in alpha_helix_ranges:
+    for (ah_start, ah_end), parallel in zip(alpha_helix_ranges, parallel_state_by_chain):
         C_ah = C[:(ah_end - ah_start)]
+        C_prev_ah = C_prev[:(ah_end-ah_start)]
+        C_next_ah = C_next[:(ah_end-ah_start)]
         A_ah = A[ah_start:ah_end]
         O_ah = O[ah_start:ah_end]
+        if parallel < 0:
+            A_ah = A_ah[::-1]
+            O_ah = O_ah[::-1]
 
-        crick_first[ah_start:ah_end] = C_ah - O_ah
-        crick_second[ah_start:ah_end] = A_ah - O_ah
+        crick_first[ah_start:ah_end] = crick_first_ah = C_ah - O_ah
+        crick_second[ah_start:ah_end] = crick_second_ah = A_ah - O_ah
 
         #O_O_next_ah = O_next[ah_start:ah_end] - O_ah
 
         # mixed[ah_start:ah_end] = np.dot(np.cross(O_O_next_ah, crick_second[ah_start:ah_end]), crick_first[ah_start:ah_end].transpose()).diagonal()
 
 
+        c_next_vec_ah = C_ah - C_prev_ah
+        c_next_vec_ah[0] = C_next_ah[0] - C_ah[0]
 
-    mixed = np.sign(np.cross(crick_first, crick_second)[:,-1])
+        mixed[ah_start:ah_end] = np.sign(dot(np.cross(crick_first_ah, crick_second_ah), c_next_vec_ah.transpose()).diagonal())
 
 
 
     alpha = crick_phase = angle_between_rad(crick_first, crick_second)
-    alpha[~alpha_helix_mask] = -float('inf')
     alpha = alpha * (180 / np.pi) * mixed
-
+    alpha[~alpha_helix_mask] = -float('inf')
 
 
 

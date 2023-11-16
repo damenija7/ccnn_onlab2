@@ -38,7 +38,7 @@ class Trainer:
             self.transform_val_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
 
         if self.get_dataset_type(self.train_loader.dataset) == CCPredictionDataset:
-            self.transform_train_sequences = lambda sequences : [self.sequence_embedder.embed(sequence) for sequence in sequences]
+            self.transform_train_sequences = lambda sequences : [self.sequence_embedder(sequence) for sequence in sequences]
         else:
             self.transform_train_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
 
@@ -193,6 +193,9 @@ class Trainer:
         seq_lens = [len(seq) for seq in sequences]
         self.set_current_batch_padding_mask(labels, seq_lens)
         sequences = self.transform_train_sequences(sequences)
+        if isinstance(sequences[0], str):
+            return labels, labels_orig, sequences, sequences
+
         sequences_orig = [sequence.to(device) for sequence in sequences]
         sequences = pad_sequence(sequences, batch_first=True).to(device)
 
@@ -294,9 +297,8 @@ class Trainer:
 
     def get_batch_stats(self, preds, labels, loss) -> Dict[str, float]:
         with torch.no_grad():
+            labels, preds = labels.squeeze(dim=-1), preds.squeeze(dim=-1)
             preds_round = preds.round()
-
-            labels, preds = labels.unsqueeze(dim=-1), preds.unsqueeze(dim=-1)
 
 
             correct_preds = preds_round == labels

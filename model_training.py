@@ -68,19 +68,18 @@ def run_training(
     except:
         pass
 
-    embedder_class = locate(embedder_class_path)
-    if embedder_class is None:
-        raise Exception(f"Couldn't load embedder '{embedder_class_path}'")
 
+    if embedder_class_path is not None:
+        embedder_class = locate(embedder_class_path)
+        if embedder_class is None:
+            raise Exception(f"Couldn't load embedder '{embedder_class_path}'")
 
-
-    def emb(x):
-        raise Exception("NO EMBEDDER")
-    embedder = embedder_class()
-    embedder.to(config.Config.device )
-    embedder_type = embedder.__class__.__name__
-    print(type(embedder))
-    #embedder = emb
+        embedder = embedder_class()
+        embedder.to(config.Config.device)
+        embedder_type = embedder.__class__.__name__
+        print(type(embedder))
+    else:
+        embedder = lambda x : x
 
     if dataset_cache is not None:
         cacher = EmbeddingCacher(sequence_embedder=embedder, cache_path=dataset_cache)
@@ -95,7 +94,10 @@ def run_training(
 
     # number of channels embedder gives
     # pass as input to model constructor if possible
-    in_channels = embedder.embed('AAB')[0].shape[-1]
+    try:
+        in_channels = embedder('AAB')[0].shape[-1]
+    except:
+        in_channels = 1024
     try:
         model = model_class(in_channels)
     except Exception as e:
@@ -387,7 +389,7 @@ if __name__ == "__main__":
     # Model to use
     parser.add_argument("-m", "--model", required=True)
     # Embedder to use
-    parser.add_argument("-emb", "--embedder", required=True)
+    parser.add_argument("-emb", "--embedder", default=None)
 
     # Dataset to train and validate on ( 7:3 split if dataset_validation_input not specified
     parser.add_argument("-i", "--dataset_input", required=True)
