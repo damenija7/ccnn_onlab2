@@ -1,3 +1,4 @@
+import warnings
 from typing import List, Tuple
 
 import numpy as np
@@ -97,8 +98,8 @@ def twister_main(alpha_carbon_coords: np.ndarray, cc_mask: np.ndarray, alpha_hel
     delta_phi_n = np.zeros_like(O[:, 0])
     # a_rad: local alpha helical radius per residue
     # a_rise: alpha helical rise per residue
-    a_rad = norm(O - A,axis=-1)
-    a_rise = (norm(O - O_prev, axis=-1) + norm(O_next - O, axis=-1)) / 2.0
+    #a_rad = norm(O - A,axis=-1)
+    #a_rise = (norm(O - O_prev, axis=-1) + norm(O_next - O, axis=-1)) / 2.0
 
 
 
@@ -299,7 +300,9 @@ def get_crick_phases(A, C, C_next, C_prev, O, O_next, alpha_helix_mask, alpha_he
 
 def angle_between_rad(a, b):
     a_len, b_len = norm(a, axis=-1), norm(b, axis=-1)
-    return np.arccos(dot(a, b.transpose()).diagonal() / a_len / b_len)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        return np.arccos(dot(a, b.transpose()).diagonal() / a_len / b_len)
 
 
 def twister_get_O_alt(A, ah_start, ah_end, parallel_state):
@@ -332,7 +335,9 @@ def twister_get_O_alt(A, ah_start, ah_end, parallel_state):
     A_coeff[:, :, 0] = I
     # O_n+1 = - (A_n+1 +I_n+1 * y)- > y var
     A_coeff[:, :, 1] = -I_next
-    A_coeff[:, :, 2] = np.cross(I, I_next)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        A_coeff[:, :, 2] = np.cross(I, I_next)
 
 
 

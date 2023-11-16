@@ -1,3 +1,4 @@
+import warnings
 from collections import namedtuple
 
 import numpy as np
@@ -24,13 +25,15 @@ HelixClass = namedtuple('HelixClass',
 
 
 def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, np.array]:
-    pdb_parser = Bio.PDB.PDBParser()
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        pdb_parser = Bio.PDB.PDBParser()
 
-    if id == None:
-        id = pdb_path.rsplit('/')[0]
+        if id == None:
+            id = pdb_path.rsplit('/')[0]
 
     # %%
-    struct = pdb_parser.get_structure(file=pdb_path, id=id)
+        struct = pdb_parser.get_structure(file=pdb_path, id=id)
     # %%
 
     # %%
@@ -84,8 +87,8 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 def get_dssp_info_alt(models, dssp_path, pdb_path):
 
-
-    dssp_by_model = [pydssp.assign(torch.tensor(pydssp.read_pdbtext(open(pdb_path, 'r').read())))]
+    with open(pdb_path, 'r') as pdb_f:
+        dssp_by_model = [pydssp.assign(torch.tensor(pydssp.read_pdbtext(pdb_f.read())))]
 
 
     num_residues_by_model = [len(dssp) for dssp in dssp_by_model]
@@ -156,7 +159,7 @@ def get_dssp_info(models, dssp_path, pdb_path):
 #test_fname='AF-A0A4W3JAN5-F1-model_v4.pdb'
 #test_fname = '2zta.pdb'
 # test_fname = '1d7m.pdb'
-test_fname='2zta.pdb'
+test_fname='3wiw.pdb'
 test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
 
 if __name__ == '__main__':

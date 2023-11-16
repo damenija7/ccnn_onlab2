@@ -298,6 +298,17 @@ class Trainer:
     def get_batch_stats(self, preds, labels, loss) -> Dict[str, float]:
         with torch.no_grad():
             labels, preds = labels.squeeze(dim=-1), preds.squeeze(dim=-1)
+
+            if preds.shape[0] != labels.shape[0] or preds.shape[1] != labels.shape[1]:
+                return {
+                    'accuracy': -1,
+                    'sensitivity': -1,
+                    'precision': -1,
+                    'F1': -1,
+                    'iou': -1,
+                    'loss': loss.item()
+                }
+
             preds_round = preds.round()
 
 

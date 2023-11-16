@@ -108,6 +108,34 @@ def run_training(
     model.to(config.Config.device)
 
 
+    # TODO REMOVE
+    #sequences = ['EDLSLVGQPENDYDTGDDBTAADPDSNNTAAALDVRRPLPSGTRVRRPPLRHRRLAPGAVMSRDPPASPRPQEAQKAIRDEGGCMLPESDLGVLCPTGCELREELLKQRDPVRYKISMLKQNLTYFINSFDRMASDSNTLKQNVQTLRRRLNSRSSTHVNAQKEIENRYKEVKIRIESTVAGSLRSMKSVLEHLRAKMQRMEEAIKTQKELCSAPCTVNCRVPVVSGMHCEDIYRNGGRTSEAYYIQPDLFSEPYKVFCDMESHGGGWTVVQNRVDGSSNFARDWNTYKAEFGNIAFGNGKSICNIPGEYWLGTKTVHQLTKQHTQQVLFDMSDWEGSSVYAQYASFRPENEAQGYRLWVEDYSGNAGNALLEGATQLMGDNRTMTIHNGMQFSTFDRDNDNWNPGDPTKHCSREDAGGWWYNRCHAANPNGRYYWGGIYTKEQADYGTDDGVVWMNWKGSWYSMRQMAMKLRPKWP']
+    sequence = 'MKSLLSAFVATIALIGSANGMTVTKGNGDDWLKKSTKTAVIQLTRAAQTYTPGMNPRSVNPDGTVRLAPPRDWTTGFFPGTLWYGYELSGDKNLAAEAKRFTLALDTIQYVKDTHDLGFMLYCSYGNAYRVTGDKIYLKPLENGAANLYARFNKKVGAIRSWDFGHWQFPVIIDNLMNLEYLYWAGKEFNKPEWFDAAKTHAVTTMKNHFRKDYSSYHVISYDTLSGKVLQRETHQGLTNESAWARGQAWGLYGYTMSYKDTKDKKFIEHAEHIAAFIMNHPAMPADKIPLWDFDVHNRDRSPRDASAAAVIASALLDLSTQVKDGQKYFKFAEDILKTLSSDEYLAKPGENQFFILKHSVGALLYNSEIDTPLNYADYYYLEALKRYAEIKKIDLKTINQS'
+    pred = torch.tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0.,
+         0., 0., 0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.,
+         0., 0., 0., 0., 0., 0.]], device=config.Config.device)
+    asd = model(sequence)
+
     print("Loading Datasets...")
     # CCPredictionDatasetPerResidue: ("uniprot_id", "residue_idx", "embedding", "label") header
     # CCPredictionDataset: ("uniprot_id","sequence","label") header

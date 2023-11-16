@@ -199,7 +199,7 @@ def get_socket_data(data_struct):
                     continue
 
 
-                assignment = assignments[cycle_idx]
+                assignment = assignments_tmp[cycle_idx]
                 # Assignment of heptad register
                 if assignment == '0' and n in [2,3]:
                     # K = 2, N > 2
@@ -228,12 +228,10 @@ def get_socket_data(data_struct):
                     assignments_tmp[cycle_idx] = assignment
 
 
-
-
-
+            assignments = assignments_tmp
             if not any(alpha_helices_involved <= cc for cc in coiled_coils):
                 coiled_coils.add(alpha_helices_involved)
-                assignments = assignments_tmp
+
 
         coiled_coils_by_model.append([sorted(cc) for cc in coiled_coils])
 

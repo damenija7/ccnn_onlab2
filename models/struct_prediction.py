@@ -1,4 +1,5 @@
 import os.path
+import warnings
 from hashlib import sha256
 from typing import List, Tuple
 
@@ -40,7 +41,7 @@ class StructPred(nn.Module):
         self.model = self.model.to(device)
 
 
-    def forward(self, sequences: List[str], preds = None):
+    def forward(self, sequences: List[str], labels = None):
         if isinstance(sequences, str):
             sequences = [sequences]
 
@@ -65,10 +66,13 @@ class StructPred(nn.Module):
 
 
     def get_output(self, pdb_path, samcc_path):
-
+        warnings.filterwarnings("error")
         data_struct = get_data_struct(pdb_path, self.dssp_path)
+
         data_socket = get_socket_data(data_struct)
         data_twister = get_twister_data(data_struct, data_socket)
+
+        warnings.resetwarnings()
 
         return data_twister
 
