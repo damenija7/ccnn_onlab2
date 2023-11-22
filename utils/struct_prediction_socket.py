@@ -11,6 +11,22 @@ from numpy import dot
 from utils.struct_prediction_helper import get_parallel_state_by_chain
 
 
+import signal
+from contextlib import contextmanager
+
+class TimeoutException(Exception): pass
+
+@contextmanager
+def time_limit(seconds):
+    def signal_handler(signum, frame):
+        raise TimeoutException("Timed out!")
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+
 def socket_helix_interactions(alpha_helix_range_1, alpha_helix_range_2, socket_center_coords, packing_cutoff = 7.0, extend=False):
     if not extend:
         alpha_helix_coords_1 = socket_center_coords[alpha_helix_range_1[0]:alpha_helix_range_1[1]]
@@ -87,7 +103,7 @@ def get_socket_data(data_struct):
         num_residues = socket_center_coords.shape[0]
         has_interaction = np.zeros(shape=(len(alpha_helix_ranges), len(alpha_helix_ranges)), dtype=np.bool_)
 
-        knob_hole_matrix = np.zeros(shape=(num_residues, num_residues), dtype=np.bool_)
+        knob_hole_matrix = np.zeros(shape=(num_residues+1, num_residues+1), dtype=np.bool_)
         index_to_helix_range_index = np.full(shape=(num_residues), dtype=np.int64, fill_value=-1)
 
         for helix_idx, (helix_range_start, helix_range_end) in enumerate(alpha_helix_ranges):
@@ -108,16 +124,29 @@ def get_socket_data(data_struct):
             alpha_helix_range_i = alpha_helix_ranges[i]
             for j in range(i+1, len(alpha_helix_ranges)):
                 alpha_helix_range_j = alpha_helix_ranges[j]
-                knob_1_hole_2, knob_2_hole_1 = socket_helix_interactions(alpha_helix_range_i, alpha_helix_range_j, socket_center_coords, extend=True)
+                knob_1_hole_2, knob_2_hole_1 = socket_helix_interactions(alpha_helix_range_i, alpha_helix_range_j, np.pad(socket_center_coords, ((0,1),(0,0))), extend=True)
 
                 knob_hole_matrix[alpha_helix_range_i[0]:alpha_helix_range_i[1], alpha_helix_range_j[0]:alpha_helix_range_j[1]] |= knob_1_hole_2
                 knob_hole_matrix[alpha_helix_range_j[0]:alpha_helix_range_j[1], alpha_helix_range_i[0]:alpha_helix_range_i[1]] |= knob_2_hole_1
 
+        knob_hole_matrix = knob_hole_matrix[:-1, :-1]
         # find cycles
         from networkx import simple_cycles
 
-        graph = networkx.from_numpy_array(knob_hole_matrix, create_using=networkx.DiGraph)
-        traversal_result = list(simple_cycles(graph))
+        reduced_indices = []
+        for i in range(knob_hole_matrix.shape[0]):
+            if np.sum(knob_hole_matrix[i] + knob_hole_matrix[:, i]) != 0:
+                reduced_indices.append(i)
+        knob_hole_matrix_reduced = knob_hole_matrix[reduced_indices][:, reduced_indices]
+
+        graph = networkx.from_numpy_array(knob_hole_matrix_reduced, create_using=networkx.DiGraph)
+        try:
+            with time_limit(60):
+                traversal_result = list(simple_cycles(graph))
+        except TimeoutException as e:
+            print(e)
+            traversal_result = []
+
 
 
         # def dfs(start_node):
@@ -197,10 +226,13 @@ def get_socket_data(data_struct):
 
 
         for cycle_graph in traversal_result:
+            cycle_graph = [reduced_indices[cycle_i] for cycle_i in cycle_graph]
+
+
             assignments_tmp = assignments.copy()
 
             cycle_graph_helices = [index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph]
-            alpha_helices_involved = frozenset(index_to_helix_range_index[cycle_i] for cycle_i in cycle_graph)
+            alpha_helices_involved = frozenset(cycle_graph_helices)
             N = len(alpha_helices_involved)
 
             knob_order = len(cycle_graph)

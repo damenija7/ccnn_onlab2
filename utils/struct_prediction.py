@@ -1,3 +1,4 @@
+import subprocess
 import warnings
 from collections import namedtuple
 
@@ -24,7 +25,7 @@ HelixClass = namedtuple('HelixClass',
 
 
 
-def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, np.array]:
+def get_data_struct(pdb_path, dssp_path, pcasso_path, id=None) -> Tuple[np.array, np.array, np.array]:
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         pdb_parser = Bio.PDB.PDBParser()
@@ -42,8 +43,9 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
 
 
 
-
-    alpha_helix_ranges_by_model = get_dssp_info_alt(models, dssp_path, pdb_path)
+    alpha_helix_ranges_by_model = get_dssp_info(models, dssp_path, pdb_path)
+    #alpha_helix_ranges_by_model = get_dssp_info_alt(models, dssp_path, pdb_path)
+    #alpha_helix_ranges_by_model = get_dssp_info_pcasso(models=models, pcasso_path=pcasso_path, pdb_path=pdb_path)
     # alpha_carbon_coords_by_model = [np.stack([(res['CA'] if not res['CA'].is_disordered() else res['CA'].disordered_get_list()[0]).coord for res in residues if 'CA' in res]) for residues in residues_by_model]
     alpha_carbon_coords_by_model = [np.stack([(res['CA']).coord for res in residues if 'CA' in res]) for residues in residues_by_model]
     socket_center_coords_by_model = []
@@ -83,20 +85,41 @@ def get_data_struct(pdb_path, dssp_path, id=None) -> Tuple[np.array, np.array, n
     }
 
 
+def get_dssp_info_pcasso(models, pcasso_path, pdb_path):
+    cmd = [pcasso_path, pdb_path]
+    assignments = subprocess.run(cmd,
+                                 capture_output=True,
+                                 text=True
+                                 ).stdout[len(pdb_path)+1:].split()
+    return assignments_to_alpha_helices_by_model([assignments])
 
 
 
 def get_dssp_info_alt(models, dssp_path, pdb_path):
 
-    with open(pdb_path, 'r') as pdb_f:
-        dssp_by_model = [pydssp.assign(torch.tensor(pydssp.read_pdbtext(pdb_f.read())))]
 
 
+    #with open(pdb_path, 'r') as pdb_f:
+    #    dssp_by_model = [pydssp.assign(torch.tensor(pydssp.read_pdbtext(pdb_f.read())))]
+
+    cmd = [dssp_path, pdb_path]
+    run_results = subprocess.run(cmd,
+                                 capture_output=True,
+                                 text=True
+                                 )
+
+    assignments = run_results.stdout
+
+    assignments = assignments.strip('\n')
+    assignments = [assignment.split()[4] for assignment in assignments]
+
+    return assignments_to_alpha_helices_by_model([assignments])
+
+
+def assignments_to_alpha_helices_by_model(dssp_by_model):
     num_residues_by_model = [len(dssp) for dssp in dssp_by_model]
-
     # %%
     alpha_helices_by_model: List[List[Tuple]] = []
-
     for dssp in dssp_by_model:
         current_alpha_helix_start = None
         alpha_helices = []
@@ -115,14 +138,10 @@ def get_dssp_info_alt(models, dssp_path, pdb_path):
 
         alpha_helices_by_model.append(alpha_helices)
     # %%
-
     return alpha_helices_by_model
 
 
 def get_dssp_info(models, dssp_path, pdb_path):
-
-
-
     dssp_by_model: List[DSSP] = [Bio.PDB.DSSP(model, pdb_path, dssp=dssp_path) for model in models]
 
     # num_residues_by_model: List[int] = [len([ residue for residue in model.get_residues() if 'CA' in residue]) for model in models]
@@ -162,9 +181,10 @@ test_fname = '2zta.pdb'
 # test_fname = '1d7m.pdb'
 #test_fname='1fu1.pdb'
 test_dssp_path='/home/damenija7/Apps/dssp.AppImage'
+test_pcasso_path='pcasso'
 
 if __name__ == '__main__':
-    data_struct = get_data_struct(test_fname, test_dssp_path)
+    data_struct = get_data_struct(test_fname, test_dssp_path, test_pcasso_path)
     data_socket = get_socket_data(data_struct)
     data_twister = get_twister_data(data_struct, data_socket)
 

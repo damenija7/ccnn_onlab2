@@ -138,6 +138,9 @@ class Trainer:
 
         model.train()
         for sequences, labels in tqdm_training_batch:
+            if all(not torch.any(label > 0) for label in labels):
+                continue
+
             torch.cuda.empty_cache()
             # debug
             sequences_orig, labels_orig = sequences, labels

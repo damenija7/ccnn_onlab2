@@ -1,10 +1,23 @@
 # bio_embeddings[all]
 
-torch
-# fair-esm[esmfold]
+
+
+pip install
+
+-i https://download.pytorch.org/whl/cu118
+torch==2.1.0
+-i https://download.pytorch.org/whl/cu118
+torchvision==0.16.0
+-i https://download.pytorch.org/whl/cu118
+torchaudio==2.1.0
+
+
+fair-esm[esmfold]
 # OpenFold and its remaining dependency
-# dllogger @ git+https://github.com/NVIDIA/dllogger.git
-# openfold @ git+https://github.com/aqlaboratory/openfold.git@4b41059694619831a7db195b7e0988fc4ff3a307
+dllogger @ git+https://github.com/NVIDIA/dllogger.git
+openfold @ git+https://github.com/aqlaboratory/openfold.git@4b41059694619831a7db195b7e0988fc4ff3a307
+
+omegafold @ git+https://github.com/HeliXonProtein/OmegaFold.git
 
 yet_another_retnet
 
@@ -31,10 +44,6 @@ snakeviz
 
 # storage
 h5py
-
-
-torchvision
-torchaudio
 
 # find cycles
 networkx

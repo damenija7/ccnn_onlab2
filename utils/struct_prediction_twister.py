@@ -111,11 +111,13 @@ def twister_main(alpha_carbon_coords: np.ndarray, alpha_helix_mask: np.ndarray, 
     # local coiled coil radius
     cc_rad = np.zeros_like(C[:, 0])
     for parallel_state, (range_start, range_end) in zip(parallel_state_by_chain, alpha_helix_ranges):
+        O_i = O[range_start:range_end] if range_end != O.shape[0] else O[range_start:]
+
         helix_len = range_end - range_start
         if parallel_state > 0:
-            cc_rad[:helix_len] += norm(C[:helix_len] - O[range_start:range_end], axis=-1)
+            cc_rad[:helix_len] += norm(C[:helix_len] - O_i, axis=-1)
         else:
-            cc_rad[:helix_len] += norm(C[:helix_len] - O[range_start:range_end][::-1], axis=-1)
+            cc_rad[:helix_len] += norm(C[:helix_len] - O_i[::-1], axis=-1)
 
     cc_rad /= (C_num_chains +(C_num_chains==0)).squeeze()
 
@@ -153,10 +155,15 @@ def get_C(O, alpha_carbon_coords, alpha_helix_ranges, parallel_states_by_chain):
     C_num_chains = np.zeros_like(C[:, 0], dtype=np.int64)
     for parallel_state, (range_start, range_end) in zip(parallel_states_by_chain, alpha_helix_ranges):
         helix_len = range_end - range_start
+
+        O_i = O[range_start:range_end] if range_end != O.shape[0] else O[range_start:]
+
         if parallel_state > 0:
-            C[:helix_len] += O[range_start:range_end]
+            C[:helix_len] += O_i
         else:
-            C[:helix_len] += (O[range_start:range_end][::-1])
+            C[:helix_len] += O_i[::-1]
+
+
         C_num_chains[:helix_len] += 1
     C_num_chains = np.expand_dims(C_num_chains, -1)
     C /= (C_num_chains + (C_num_chains == 0))
