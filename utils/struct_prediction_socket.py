@@ -86,6 +86,8 @@ def to_visit(current_path, node, visited, visited_path, visited_chain) -> bool:
     return tuple(current_path + [node]) not in visited_path
 
 
+
+
 def get_socket_data(data_struct):
     # alpha_helix_mask_by_model = data_struct['alpha_helix_mask_by_model']
     # alpha_carbon_coords_by_model

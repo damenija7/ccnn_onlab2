@@ -1,4 +1,5 @@
 import os.path
+import subprocess
 import warnings
 from hashlib import sha256
 from typing import List, Tuple, Optional
@@ -36,8 +37,13 @@ class StructPred(nn.Module):
 
         self.dummy_header = 'HEADER    HYDROLASE                               26-SEP-13   3WIW              '
 
-        if not os.path.isdir('cache'):
-            os.makedirs('cache')
+        self.tmp_path = 'cache/'
+        self.tmp_dssp = self.tmp_path + 'tmp_ccnn_damenija7.dssp'
+        self.tmp_socket = self.tmp_path + 'tmp_ccnn_damenija7.socket'
+
+        if not os.path.isdir(self.tmp_path):
+            os.makedirs(self.tmp_path)
+
 
     def to(self, device):
         super().to(device)
@@ -66,11 +72,15 @@ class StructPred(nn.Module):
                         f.write(pdb_output)
 
 
-            output = self.get_output(pdb_path = pdb_path, samcc_path = out_path, label=labels[seq_idx] if labels is not None else None)
+            output = self.get_output_alt(pdb_path = pdb_path, samcc_path = out_path, label=labels[seq_idx] if labels is not None else None)
             outputs.append(output)
 
         res = torch.nn.utils.rnn.pad_sequence(outputs, batch_first=True).to(self.device).type(torch.float)
         return res, torch.tensor([0.0], requires_grad=True)
+
+
+
+
 
 
     def get_output(self, pdb_path, samcc_path, label: Optional[torch.Tensor] = None):
@@ -105,7 +115,8 @@ class StructPred(nn.Module):
         # print('asd')
         cc_mask = torch.zeros(size=(num_res,), dtype=torch.float, device=self.device)
 
-        # data_socket = get_socket_data(data_struct)
+        data_struct = get_data_struct(pdb_path=pdb_path, dssp_path=self.dssp_path, pcasso_path=self.pcasso_path, id=None)
+        data_socket = get_socket_data(data_struct)
         # data_twister = get_twister_data(data_struct, data_socket)
         #
         # #cc_mask = data_socket['cc_mask_by_model'][0]
@@ -118,5 +129,80 @@ class StructPred(nn.Module):
 
     def get_data(self, pdb_path, id = None) -> Tuple[np.array, np.array, np.array]:
         return utils.get_data(pdb_path=pdb_path, dssp_path=self.dssp_path, id=id)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def get_output_alt(self, pdb_path, label: Optional[torch.Tensor] = None, **kwargs):
+        # get indices
+        #
+        residue_indices = set()
+
+        with open(pdb_path, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            if line.startswith('ATOM') or line.startswith("HETATM"):
+                residue_indices.add(int(line.split()[5]))
+        residuce_indices = sorted(residue_indices)
+        num_res: int = len(residue_indices)
+
+        if not os.path.exists(self.tmp_path):
+            os.makedirs(self.tmp_path)
+
+        dssp_cmd = [self.dssp_path, pdb_path, self.tmp_dssp]
+        socket_cmd = [self.socket_path, '-f', pdb_path, '-s', self.tmp_dssp, '-o', self.tmp_socket]
+
+        dssp_res = subprocess.run(dssp_cmd, capture_output=True)
+        if dssp_res.returncode == 1:
+            pass
+
+        with open(self.tmp_dssp, 'r+') as f:
+            dssp_lines = f.readlines()
+            f.writelines(dssp_lines[:136])
+
+        socket_res = subprocess.run(socket_cmd, capture_output=True)
+        if socket_res.returncode == 1:
+            pass
+
+        with open(self.tmp_socket, 'r') as f:
+            socket_lines = f.readlines()
+
+        res_idx_to_assignent = {}
+
+        _icode = "iCode=' '"
+        for line in socket_lines:
+            try:
+                icode_index = line.index(_icode)
+            except:
+                continue
+            if 'helix' not in line and icode_index + len(_icode) < len(line) and line[icode_index + len(_icode)] == 'R':
+                assignment = line[icode_index + len(_icode) + 1]
+                res_idx = int(line.split()[2].split(':')[0])
+
+                res_idx_to_assignent[res_idx] = assignment
+
+        cc_mask = torch.zeros(size=(num_res,), dtype=torch.float)
+        assignments = []
+
+        for i, idx in enumerate(residuce_indices):
+            assignment = res_idx_to_assignent.get(idx, '0')
+            cc_mask[i] = 1.0 if assignment != '0' else 0.0
+            assignments.append(assignment)
+
+        return cc_mask
 
 
