@@ -34,7 +34,7 @@ def import_class(name):
     return mod
 
 def run_training(
-        dataset_path: str,
+        dataset_path: Optional[str],
         dataset_validation_path: Optional[str],
         dataset_cache: Optional[str],
         num_epochs: int,
@@ -50,6 +50,8 @@ def run_training(
 
     if model_class_path is None:
         raise Exception("Model not specified")
+    if dataset_path is None and dataset_validation_path is None:
+        raise Exception("Neither train or validation dataset specified")
 
     print(
         f"Running Config: '{num_epochs}' Epochs, '{batch_size}' batch size, max sequence length:{max_seq_len}"
@@ -107,39 +109,10 @@ def run_training(
     print(type(model))
     model.to(config.Config.device)
 
-
-    # TODO REMOVE
-    #sequences = ['EDLSLVGQPENDYDTGDDBTAADPDSNNTAAALDVRRPLPSGTRVRRPPLRHRRLAPGAVMSRDPPASPRPQEAQKAIRDEGGCMLPESDLGVLCPTGCELREELLKQRDPVRYKISMLKQNLTYFINSFDRMASDSNTLKQNVQTLRRRLNSRSSTHVNAQKEIENRYKEVKIRIESTVAGSLRSMKSVLEHLRAKMQRMEEAIKTQKELCSAPCTVNCRVPVVSGMHCEDIYRNGGRTSEAYYIQPDLFSEPYKVFCDMESHGGGWTVVQNRVDGSSNFARDWNTYKAEFGNIAFGNGKSICNIPGEYWLGTKTVHQLTKQHTQQVLFDMSDWEGSSVYAQYASFRPENEAQGYRLWVEDYSGNAGNALLEGATQLMGDNRTMTIHNGMQFSTFDRDNDNWNPGDPTKHCSREDAGGWWYNRCHAANPNGRYYWGGIYTKEQADYGTDDGVVWMNWKGSWYSMRQMAMKLRPKWP']
-    sequence = 'MKSLLSAFVATIALIGSANGMTVTKGNGDDWLKKSTKTAVIQLTRAAQTYTPGMNPRSVNPDGTVRLAPPRDWTTGFFPGTLWYGYELSGDKNLAAEAKRFTLALDTIQYVKDTHDLGFMLYCSYGNAYRVTGDKIYLKPLENGAANLYARFNKKVGAIRSWDFGHWQFPVIIDNLMNLEYLYWAGKEFNKPEWFDAAKTHAVTTMKNHFRKDYSSYHVISYDTLSGKVLQRETHQGLTNESAWARGQAWGLYGYTMSYKDTKDKKFIEHAEHIAAFIMNHPAMPADKIPLWDFDVHNRDRSPRDASAAAVIASALLDLSTQVKDGQKYFKFAEDILKTLSSDEYLAKPGENQFFILKHSVGALLYNSEIDTPLNYADYYYLEALKRYAEIKKIDLKTINQS'
-    pred = torch.tensor([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0.,
-         0., 0., 0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 1., 1., 1., 1., 1., 1., 1., 1., 0., 0., 0., 0., 0., 0., 0., 0.,
-         0., 0., 0., 0., 0., 0.]], device=config.Config.device)
-    asd = model(sequence)
-
     print("Loading Datasets...")
     # CCPredictionDatasetPerResidue: ("uniprot_id", "residue_idx", "embedding", "label") header
     # CCPredictionDataset: ("uniprot_id","sequence","label") header
-    dataset_class = get_dataset_class(dataset_path, force_per_residue)
+    dataset_class = get_dataset_class(dataset_path, force_per_residue) if dataset_path else None
 
 
     # TMP
@@ -179,8 +152,7 @@ def run_training(
         max_seq_len=max_seq_len,
         # label_transform=label_transform_begin
         seq_embedder=embedder
-
-    )
+    ) if dataset_path else None
 
     if dataset_validation_path:
         val_dataset = get_dataset_class(dataset_validation_path, force_per_residue=False)(
@@ -245,9 +217,9 @@ def train_normal(batch_size,
 
     print("Setting up Dataloader...")
 
-    train_sampler, val_sampler = RandomSampler(train_dataset), RandomSampler(val_dataset)
+    train_sampler, val_sampler = RandomSampler(train_dataset) if train_dataset else None, RandomSampler(val_dataset)
     if weighted_random_sampler:
-        train_sampler = get_weighted_train_sampler(train_dataset, train_sampler)
+        train_sampler = get_weighted_train_sampler(train_dataset, train_sampler) if train_dataset else None
         #
         # Don't use oversampling for validation, use as is!
         # ( Would lead to false validation statitics )
@@ -256,7 +228,7 @@ def train_normal(batch_size,
 
     train_dataloader, val_dataloader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=False, collate_fn=raw_collator, sampler=train_sampler, drop_last=True
-    ), DataLoader(
+    ) if train_dataset else None, DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False, collate_fn=raw_collator, sampler=val_sampler, drop_last=True
     )
     trainer = Trainer(
@@ -271,17 +243,26 @@ def train_normal(batch_size,
     # Write training parameters
     with open(f"{training_results_path}/parameters.json", "w") as f:
         json.dump(vars(args), f)
-    training_results = trainer.train(
-        model=model,
-        embedder=embedder,
-        num_epochs=num_epochs,
-        best_model_save_file_path=f"{training_results_path}/best_model_{model_type}.pkl",
-    )
-    results = {'training_results': training_results}
-    results['model_type'] = model_type
-    with open(f"{training_results_path}/results.json", "w") as f:
-        json.dump(results, f)
-    visualize_training_results(results, training_results_path + "/result")
+
+    if train_dataset:
+        training_results = trainer.train(
+            model=model,
+            embedder=embedder,
+            num_epochs=num_epochs,
+            best_model_save_file_path=f"{training_results_path}/best_model_{model_type}.pkl",
+        )
+        results = {'training_results': training_results}
+        results['model_type'] = model_type
+        with open(f"{training_results_path}/results.json", "w") as f:
+            json.dump(results, f)
+        visualize_training_results(results, training_results_path + "/result")
+    else:
+        # Validation ONLY
+        validation_results = trainer.validate   (model, embedder)
+        results = {'validation_results': validation_results}
+        with open(f"{training_results_path}/results.json", "w") as f:
+            json.dump(results, f)
+        print(results)
 
 
 def get_weighted_train_sampler(train_dataset, train_sampler):
@@ -420,7 +401,7 @@ if __name__ == "__main__":
     parser.add_argument("-emb", "--embedder", default=None)
 
     # Dataset to train and validate on ( 7:3 split if dataset_validation_input not specified
-    parser.add_argument("-i", "--dataset_input", required=True)
+    parser.add_argument("-i", "--dataset_input", default=None)
     parser.add_argument("-iv", "--dataset_validation_input", default=None)
 
     parser.add_argument("-c", "--dataset_cache", required=False)

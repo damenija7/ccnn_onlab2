@@ -33,11 +33,11 @@ class Trainer:
         #
         #
         if self.get_dataset_type(self.val_loader.dataset) == CCPredictionDataset:
-            self.transform_val_sequences = lambda sequences : [self.sequence_embedder.embed(sequence) for sequence in sequences]
+            self.transform_val_sequences = lambda sequences : [self.sequence_embedder (sequence) for sequence in sequences]
         else:
             self.transform_val_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
 
-        if self.get_dataset_type(self.train_loader.dataset) == CCPredictionDataset:
+        if self.get_dataset_type(self.train_loader.dataset) if self.train_loader else None == CCPredictionDataset:
             self.transform_train_sequences = lambda sequences : [self.sequence_embedder(sequence) for sequence in sequences]
         else:
             self.transform_train_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
@@ -62,6 +62,16 @@ class Trainer:
             return CCPredictionDataset
 
         return CCPredictionDatasetPerResidue
+
+    def validate(self, model: nn.Module, embedder: Callable):
+        self.sequence_embedder = embedder
+
+        if self.half:
+            model.half()
+
+        return self.validate_epoch(model)
+
+
 
     def train(
         self, model: nn.Module, embedder: Callable, num_epochs: int, best_model_save_file_path: str
@@ -190,12 +200,12 @@ class Trainer:
 
         return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in train_epoch_stats}
 
-    def convert_seq_label(self, sequences, labels, device):
+    def convert_seq_label(self, sequences, labels, device, train=True):
         labels_orig = [label.to(device) for label in labels]
         labels = pad_sequence(labels, batch_first=True).to(device)
         seq_lens = [len(seq) for seq in sequences]
         self.set_current_batch_padding_mask(labels, seq_lens)
-        sequences = self.transform_train_sequences(sequences)
+        sequences = self.transform_train_sequences(sequences) if train else self.transform_val_sequences(sequences)
         if isinstance(sequences[0], str):
             return labels, labels_orig, sequences, sequences
 
@@ -228,7 +238,7 @@ class Trainer:
             torch.cuda.empty_cache()
 
             self.current_batch_neg_rate = 1.0 - sum(label.mean() for label in labels) / len(labels)
-            labels, labels_orig, sequences, sequences_orig = self.convert_seq_label(sequences, labels, device)
+            labels, labels_orig, sequences, sequences_orig = self.convert_seq_label(sequences, labels, device, False)
 
             with torch.no_grad():
                 # get predictions of model
