@@ -1,6 +1,5 @@
 depo
 output
-cache
 *.h5
 *.cache
 *.xml
