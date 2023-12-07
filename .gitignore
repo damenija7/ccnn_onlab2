@@ -1,6 +1,5 @@
 depo
 output
-*.h5
 *.cache
 *.xml
 venv
