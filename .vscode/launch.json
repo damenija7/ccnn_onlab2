@@ -1,0 +1,32 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+
+        {
+            "name": "Python: Training Normal",
+            "type": "python",
+            "request": "launch",
+            "program": "model_training.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["-e", "1",
+            "-b","8", 
+            "-m", "models.conv.ConvBasic",
+        "-emb", "embedders.prottrans.ProtTransEmbedder",
+    "-i","input/input_own.csv",
+"-iv", "input/coconat_test.csv",
+"-c", "cache.prottrans.h5"]
+        }
+    ]
+}
