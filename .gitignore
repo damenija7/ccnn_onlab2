@@ -3,3 +3,5 @@ output
 *.cache
 *.xml
 venv
+__pycache__
+*.pyc
