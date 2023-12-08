@@ -61,12 +61,18 @@ def run_training(
     except:
         pass
 
-    embedder_class = load_class(embedder_class_path)
-    #embedder = embedder_class()
-    #embedder.to(config.Config.device)
-    #print(type(embedder))
-    def embedder(x):
+
+      def embedder(x):
         raise Exception("No embedder")
+
+    try:
+        embedder_class = load_class(embedder_class_path)
+        embedder = embedder_class()
+        embedder.to(config.Config.device)
+        print(type(embedder))
+    except:
+        pass
+  
 
     if dataset_cache is not None:
         cacher = EmbeddingCacher(sequence_embedder=embedder, cache_path=dataset_cache)
