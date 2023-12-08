@@ -8,7 +8,7 @@ import torchvision
 from torch import nn, optim, Tensor
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from model_training.dataset.cc_prediction_dataset import CCPredictionDataset
 from model_training.dataset.cc_prediction_dataset_per_residue import CCPredictionDatasetPerResidue
@@ -37,7 +37,7 @@ class Trainer:
         else:
             self.transform_val_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
 
-        if self.get_dataset_type(self.train_loader.dataset) if self.train_loader else None == CCPredictionDataset:
+        if (self.get_dataset_type(self.train_loader.dataset) if self.train_loader else None) == CCPredictionDataset:
             self.transform_train_sequences = lambda sequences : [self.sequence_embedder(sequence) for sequence in sequences]
         else:
             self.transform_train_sequences = lambda sequences: [torch.unsqueeze(sequence, 0) for sequence in sequences]
@@ -310,9 +310,9 @@ class Trainer:
 
     def get_batch_stats(self, preds, labels, loss) -> Dict[str, float]:
         with torch.no_grad():
-            labels, preds = labels.squeeze(dim=-1), preds.squeeze(dim=-1)
+            labels, preds = labels.squeeze(), preds.squeeze()
 
-            if preds.shape[0] != labels.shape[0] or preds.shape[1] != labels.shape[1]:
+            if preds.shape[0] != labels.shape[0] or (len(preds.shape) > 1 and len(labels.shape) > 1 and preds.shape[1] != labels.shape[1]):
                 return {
                     'accuracy': -1,
                     'sensitivity': -1,

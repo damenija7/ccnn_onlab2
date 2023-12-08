@@ -14,19 +14,48 @@
         },
 
         {
-            "name": "Python: Training Normal",
+            "name": "Training Normal",
             "type": "python",
             "request": "launch",
             "program": "model_training.py",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "args": ["-e", "1",
+            "args": ["-e", "6",
             "-b","8", 
-            "-m", "models.conv.ConvBasic",
+            "-m", "models.linear.Linear",
         "-emb", "embedders.prottrans.ProtTransEmbedder",
-    "-i","input/input_own.csv",
+    "-i","input/input_own.processed.csv",
 "-iv", "input/coconat_test.csv",
-"-c", "cache.prottrans.h5"]
+"-c", "cache.prottrans.h5",
+"-msl", "1024"]
+        },
+
+
+
+
+        {
+            "name": "Dataset Conversion",
+            "type": "python",
+            "request": "launch",
+            "program": "dataset_conversion.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["-i", "input/ccplus-50perc-20230329.csv",
+                            "-o", "input/input_own_last.csv"]
+        },
+
+        {
+            "name": "Dataset Embedding Cacher",
+            "type": "python",
+            "request": "launch",
+            "program": "dataset_embedding_cacher.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": ["-i", "input/input_own.csv",
+                            "-o", "cache.prottrans.h5",
+                        "-e", "embedders.prottrans.ProtTransEmbedder",
+                    "-d", "cpu",
+                "-msl", "1024"]
         }
     ]
 }
