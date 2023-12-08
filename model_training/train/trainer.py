@@ -97,12 +97,16 @@ class Trainer:
             tqdm_training_batch = tqdm(self.train_loader, "Training Batch")
 
 
-            train_batch_stats = self.train_epoch(
+            train_epoch_stats, train_cumulative_epoch_stats = self.train_epoch(
                 model, optimizer, tqdm_training_batch
             )
 
+            TP, FP, TN, FN = train_cumulative_epoch_stats ['TP'], train_cumulative_epoch_stats ['FP'], train_cumulative_epoch_stats ['TN'], train_cumulative_epoch_stats ['FN']
+            train_acc, train_sens, train_prec, train_F1 = self.get_accuracy_sensitivity_precision_F1(TP=TP, FP=FP, TN=TN, FN=FN)
+            train_epoch_stats['accuracy'], train_epoch_stats['sensitivity'], train_epoch_stats['precision'], train_epoch_stats['F1'] =  train_acc, train_sens, train_prec, train_F1
+
             # Keep track of Mean Training Stat Value of the current Epoch
-            for key, val in train_batch_stats.items():
+            for key, val in train_epoch_stats.items():
                 if math.isnan(val) or math.isinf(val):
                     val = 0.0
 
@@ -111,15 +115,19 @@ class Trainer:
             #
             # Validation of Current Epoch
             #
-            val_batch_stats = self.validate_epoch(model)
+            val_epoch_stats, val_cumulative_epoch_stats = self.validate_epoch(model)
+
+            TP, FP, TN, FN = val_cumulative_epoch_stats['TP'], val_cumulative_epoch_stats['FP'], val_cumulative_epoch_stats['TN'], val_cumulative_epoch_stats['FN']
+            val_acc, val_sens, val_prec, val_F1 = self.get_accuracy_sensitivity_precision_F1(TP=TP, FP=FP, TN=TN, FN=FN)
+            val_epoch_stats['accuracy'], val_epoch_stats['sensitivity'], val_epoch_stats['precision'], val_epoch_stats['F1'] =  val_acc, val_sens, val_prec, val_F1
 
             # save model if validation sensitivity is such that it is considered the best predictor
-            if val_batch_stats['loss'] < best_loss:
-                best_loss = val_batch_stats['loss']
+            if val_epoch_stats['loss'] < best_loss:
+                best_loss = val_epoch_stats['loss']
                 torch.save(model, best_model_save_file_path)
 
             # Record the Main Validation Loss and Validation Accuracy of the current Epoch
-            for key, val in val_batch_stats.items():
+            for key, val in val_epoch_stats.items():
                 if math.isnan(val) or math.isinf(val):
                     val = 0.0
 
@@ -133,12 +141,13 @@ class Trainer:
 
 
         return {
-            "train": train_stats,
+            "train": train_stats, 
             "val": val_stats
         }
 
     def train_epoch(self, model, optimizer, tqdm_training_batch):
         train_epoch_stats = {'loss': [], 'accuracy': [], 'sensitivity': [], 'precision': [], 'F1': []}
+        train_cumulative_stats = {}
 
         if self.previous_training_sensitivity is None:
             self.previous_training_sensitivity = 0.0
@@ -185,9 +194,13 @@ class Trainer:
             optimizer.step()
 
 
-            train_batch_stats = self.get_batch_stats(
+            train_batch_stats, train_cumulative_stats_batch = self.get_batch_stats(
                 labels=labels, preds=preds, loss=loss
             )
+
+            for key, val in train_cumulative_stats_batch.items():
+                train_cumulative_stats.setdefault(key, 0)
+                train_cumulative_stats[key] += val
 
 
             for key, val in train_batch_stats.items():
@@ -198,7 +211,7 @@ class Trainer:
 
             tqdm_training_batch.set_description(f'Training Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val != -1 else "NONE") for metric_name, metric_val in train_batch_stats.items())}')
 
-        return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in train_epoch_stats}
+        return {key: np.mean(train_epoch_stats[key]) if len(train_epoch_stats[key]) > 0 else 0.0 for key in train_epoch_stats}, train_cumulative_stats
 
     def convert_seq_label(self, sequences, labels, device, train=True):
         labels_orig = [label.to(device) for label in labels]
@@ -227,6 +240,7 @@ class Trainer:
 
     def validate_epoch(self, model):
         val_epoch_stats = {'loss': [], 'accuracy': [], 'sensitivity': [], 'precision': [], 'F1': []}
+        val_cumulative_epoch_stats = {}
 
 
         device = next(model.parameters()).device
@@ -252,9 +266,13 @@ class Trainer:
                 if torch.isnan(preds).any():
                     raise Exception("Model generated prediction contains nan")
 
-                val_batch_stats = self.get_batch_stats(
+                val_batch_stats, val_cumulative_batch_stats = self.get_batch_stats(
                     labels=labels, preds=preds, loss=loss
                 )
+
+                for key, val in val_cumulative_batch_stats.items():
+                    val_cumulative_epoch_stats.setdefault(key, 0)
+                    val_cumulative_epoch_stats[key] += val
 
                 for key, val in val_batch_stats.items():
                     if val > -1:
@@ -263,7 +281,7 @@ class Trainer:
 
                 tqdm_val_batch.set_description(f'Validation Batch ({OrderedDict((metric_name, "{:1.4f}".format(metric_val) if metric_val >= 0 else "NONE") for metric_name, metric_val in val_batch_stats.items())}')
 
-        return {key: np.mean(val_epoch_stats[key]) if len(val_epoch_stats[key]) > 0 else 0.0 for key in val_epoch_stats}
+        return {key: np.mean(val_epoch_stats[key]) if len(val_epoch_stats[key]) > 0 else 0.0 for key in val_epoch_stats}, val_cumulative_epoch_stats
 
 
     def _get_loss(self, labels: torch.Tensor, preds: torch.Tensor, validation: bool):
@@ -339,10 +357,7 @@ class Trainer:
             TN = correct_preds_negative.sum().item()
             FP = torch.numel(correct_preds_negative) - TN
 
-        accuracy = (TP + TN) / (TP + TN + FP + FN)
-        sensitivity = TP / (TP + FN) if (TP + FN) > 0 else -1
-        precision = TP / (TP + FP) if (TP + FP) > 0 else -1
-        F1 = 2 * TP / (2*TP + FP + FN) if (2*TP + FP + FN) > 0 else -1
+        accuracy, sensitivity, precision, F1 = self.get_accuracy_sensitivity_precision_F1(TP, FP, TN, FN)
 
         # accuracy = (preds_round == labels).float().mean().item()
         return {
@@ -352,4 +367,13 @@ class Trainer:
             'F1': F1,
             'iou': iou,
             'loss': loss.item()
-        }
+        }, {'TP':TP, 'FP': FP, 'TN': TN, 'FN': FN}
+
+
+    def get_accuracy_sensitivity_precision_F1(self, TP, FP, TN, FN):
+        accuracy = (TP + TN) / (TP + TN + FP + FN)
+        sensitivity = TP / (TP + FN) if (TP + FN) > 0 else -1
+        precision = TP / (TP + FP) if (TP + FP) > 0 else -1
+        F1 = 2 * TP / (2*TP + FP + FN) if (2*TP + FP + FN) > 0 else -1
+
+        return accuracy, sensitivity, precision, F1
