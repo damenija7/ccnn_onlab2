@@ -227,7 +227,7 @@ def train_normal(batch_size,
         #val_sampler = WeightedRandomSampler(weights=val_weights, num_samples=len(val_dataset), replacement=True)
 
     train_dataloader, val_dataloader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=False, collate_fn=raw_collator, sampler=train_sampler, drop_last=True
+        train_dataset, batch_size=batch_size if type(train_dataset) != CCPredictionDatasetPerResidue else batch_size*512, shuffle=False, collate_fn=raw_collator, sampler=train_sampler, drop_last=True
     ) if train_dataset else None, DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False, collate_fn=raw_collator, sampler=val_sampler, drop_last=True
     )

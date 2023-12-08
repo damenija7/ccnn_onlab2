@@ -37,7 +37,7 @@ class EmbeddingCacher:
         if len(sequences_to_cache) == 0:
             return
 
-        embeddings_to_cache = [self.embedder.embed(sequence) for sequence in sequences_to_cache]
+        embeddings_to_cache = [self.embedder(sequence) for sequence in sequences_to_cache]
         self._save_local_cache(sequences_to_cache, embeddings_to_cache)
 
     def _save_local_cache(self, sequences: List[str], embeddings: List[str]):
