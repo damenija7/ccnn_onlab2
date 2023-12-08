@@ -62,7 +62,7 @@ def run_training(
         pass
 
 
-      def embedder(x):
+    def embedder(x):
         raise Exception("No embedder")
 
     try:
