@@ -1,7 +1,7 @@
 import math
 from collections import OrderedDict
 from typing import Dict, Any, Callable, List
-
+import sys
 import numpy as np
 import torch
 import torchvision
@@ -85,7 +85,11 @@ class TrainerRange:
             # save model if validation sensitivity is such that it is considered the best predictor
             if val_batch_stats['loss'] < best_loss:
                 best_loss = val_batch_stats['loss']
-                torch.save(model, best_model_save_file_path)
+                try:
+                    torch.save(model, best_model_save_file_path)
+                except Exception as e:
+                    print(f"Failed to save model", file=sys.stderr)
+                    print(str(e), file=sys.stderr)
 
             # Record the Main Validation Loss and Validation Accuracy of the current Epoch
             for key, val in val_batch_stats.items():
